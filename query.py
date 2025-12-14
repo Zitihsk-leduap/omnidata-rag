@@ -42,7 +42,7 @@ def query_rag(query_text: str):
 
 
     #print output
-    model = OllamaLLM(model="nomic-embed-text")
+    model = OllamaLLM(model="smollm2")
     response_text = model.invoke(prompt)
 
 
