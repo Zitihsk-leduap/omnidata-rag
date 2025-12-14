@@ -33,7 +33,7 @@ def query_and_validated(question: str, expected_response: str):
         actual_response=response_test,
     )
 
-    model = Ollama(model="llama3")
+    model = Ollama(model="nomic-embed-text")
     evaluation_results = model.invoke(prompt)
     evaluation_results_cleaned = evaluation_results.strip().lower()
 

@@ -1,9 +1,9 @@
-from langchain_community.embeddings import OllaEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 
 
 # Instantiation of the Ollama Embeddings model
 def get_embeddings():
-    embeddings = OllaEmbeddings(
-    model="llama3",
+    embeddings = OllamaEmbeddings(
+    model="nomic-embed-text",
     )
     return embeddings

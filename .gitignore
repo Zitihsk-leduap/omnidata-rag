@@ -1,2 +1,5 @@
 .venv/
 Data/
+chroma/
+__pycache__/
+*.pyc

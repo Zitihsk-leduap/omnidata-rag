@@ -1,126 +1,127 @@
 import argparse
 import os
 import shutil
-from langchain.document_loaders.pdf import PyPDFDirectoryLoader
-from langchain.text_splitters import RecursiveCharacterTextSplitter
-from langchain.schema.document import Document
+from typing import List
+
+from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_community.vectorstores import Chroma
+
 from generate_embeddings import get_embeddings
-from langchain.vectorstores.chroma import Chroma
-
-Data_Path = "Data"
 
 
-# this function is repsonsible for loading the documents from the Data directory 
-def load_documents():
-    document_loader = PyPDFDirectoryLoader(Data_Path)
-    return document_loader.load()
+DATA_PATH = "Data"
+CHROMA_PATH = "chroma"
 
 
+# ----------------------------
+# Load PDF documents
+# ----------------------------
+def load_documents() -> List[Document]:
+    loader = PyPDFDirectoryLoader(DATA_PATH)
+    return loader.load()
 
-# this function is responsible for splitting the documents into smaller chunks, since the data is too large to be proecessed at once
-def split_documents(documents:list[Document]):
-    text_splitter = RecursiveCharacterTextSplitter(
+
+# ----------------------------
+# Split documents into chunks
+# ----------------------------
+def split_documents(documents: List[Document]) -> List[Document]:
+    splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200,
         length_function=len,
-        is_separator_regex=False,    
     )
-    return text_splitter.split_documents(documents)
+    return splitter.split_documents(documents)
 
 
-# Storing and Updating the Data
-def add_to_vectorstore(chunks:list[Document]):
-
-    #Load the existing database
-    db = Chroma(
-        persist_directory="chroma", embedding_function=get_embeddings()
-    )
-
-
-    #calculate page ids
-    chunks_with_ids =calculate_chunk_ids(chunks)
-
-    # Add or update the documents
-    existing_items = db.get(include=[])
-    existing_ids = set(existing_items['ids'])
-    print(f"Existing IDs in the database: {existing_ids}")
-
-
-    new_chunks =[]
-
-    for chunk in chunks_with_ids:
-        if chunks.metadata["id"] not in existing_ids:
-            new_chunks.append(chunk)
-
-    if len(new_chunks):
-        print(f"Adding {len(new_chunks)} new chunks to the database.")
-        new_chunks_ids = [chunk.metadata["id"] for chunk in new_chunks]
-        db.add.documents(new_chunks, ids=new_chunks_ids)
-        db.persist()
-    else:
-        print("No new chunks to add. Database is up to date.")
-
-
-
-
-
-def calculate_chunk_ids(chunks):
+# ----------------------------
+# Generate deterministic chunk IDs
+# ----------------------------
+def calculate_chunk_ids(chunks: List[Document]) -> List[Document]:
     last_page_id = None
-    current_chunk_index = 0
+    chunk_index = 0
 
     for chunk in chunks:
-        source = chunk.metadata.get("source")
-        page = chunk.metadata.get("page")
-        current_page_id = f"{source}_page_{page}"
+        source = chunk.metadata.get("source", "unknown")
+        page = chunk.metadata.get("page", 0)
+        page_id = f"{source}_page_{page}"
 
-
-        if current_page_id == last_page_id:
-            current_chunk_index += 1
+        if page_id == last_page_id:
+            chunk_index += 1
         else:
-            current_chunk_index = 0
-            
-        chunk_id = f"{current_page_id}_chunk_{current_chunk_index}"
-        last_page_id = current_page_id
+            chunk_index = 0
 
-        chunk.metadata["id"] = chunk_id
+        chunk.metadata["id"] = f"{page_id}_chunk_{chunk_index}"
+        last_page_id = page_id
 
     return chunks
 
 
+# ----------------------------
+# Add documents to Chroma DB
+# ----------------------------
+def add_to_vectorstore(chunks: List[Document]) -> None:
+    db = Chroma(
+        persist_directory=CHROMA_PATH,
+        embedding_function=get_embeddings(),
+    )
+
+    chunks = calculate_chunk_ids(chunks)
+
+    existing_items = db.get()
+    existing_ids = set(existing_items["ids"])
+
+    new_chunks = [
+        chunk for chunk in chunks
+        if chunk.metadata["id"] not in existing_ids
+    ]
+
+    if new_chunks:
+        print(f"➕ Adding {len(new_chunks)} new chunks to Chroma")
+        new_chunk_ids = [chunk.metadata["id"] for chunk in new_chunks]
+        db.add_documents(new_chunks, ids=new_chunk_ids)
+        db.persist()
+    else:
+        print("✅ No new chunks to add — database is up to date")
 
 
-def clear_database():
-    if os.path.exists("chroma"):
-        shutil.rmtree("chroma")
+# ----------------------------
+# Clear Chroma database
+# ----------------------------
+def clear_database() -> None:
+    if os.path.exists(CHROMA_PATH):
+        shutil.rmtree(CHROMA_PATH)
+        print("🧹 Chroma database cleared")
 
 
-
-
-
+# ----------------------------
+# Main CLI entry point
+# ----------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Load and process PDF documents.")
+    parser = argparse.ArgumentParser(description="Ingest PDFs into Chroma DB")
     parser.add_argument(
         "--clear_db",
         action="store_true",
-        help="Clear the existing vector store database before loading new documents.",
+        help="Clear the existing Chroma database before ingesting",
     )
     args = parser.parse_args()
 
     if args.clear_db:
         clear_database()
-        print("Cleared the existing vector store database.")
 
-    print("Loading documents...")
+    print("📄 Loading documents...")
     documents = load_documents()
-    print(f"Loaded {len(documents)} documents.")
+    print(f"📚 Loaded {len(documents)} documents")
 
-    print("Splitting documents into chunks...")
+    print("✂️ Splitting documents into chunks...")
     chunks = split_documents(documents)
-    print(f"Split into {len(chunks)} chunks.")
+    print(f"🧩 Created {len(chunks)} chunks")
 
-    print("Adding chunks to vector store...")
+    print("📦 Storing chunks in vector database...")
     add_to_vectorstore(chunks)
-    print("Process completed.")
+
+    print("✅ Ingestion complete!")
 
 
 if __name__ == "__main__":
