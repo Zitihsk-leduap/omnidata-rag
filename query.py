@@ -1,7 +1,7 @@
 import argparse
-from langchain.vectorstores.chroma import Chroma
-from langchain.prompts import ChatPromptTemplate
-from langchain.community.llms import Ollama
+from langchain_community.vectorstores import Chroma
+from langchain_core.prompts import ChatPromptTemplate  # latest ChatPromptTemplate import
+from langchain_ollama import OllamaLLM 
 
 
 from generate_embeddings import get_embeddings
@@ -42,7 +42,7 @@ def query_rag(query_text: str):
 
 
     #print output
-    model = Ollama(model="nomic-embed-text")
+    model = OllamaLLM(model="nomic-embed-text")
     response_text = model.invoke(prompt)
 
 
