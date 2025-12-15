@@ -9,7 +9,7 @@ def chat_loop():
     while True:
         user_input = input("You: ")
         if user_input.lower() in ["exit", "quit"]:
-            print("Exiting chat. Goodbye! 👋")
+            print("Exiting chat. Goodbye!")
             break
 
         # Query RAG for response
