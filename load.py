@@ -9,10 +9,14 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
 
+from Scraper.scrape import load_from_web
+from generate_embeddings import get_embeddings
+
+
 API_KEY = "pub_f1220880c32346cd8f11360ae3eb6ae5"
 url = f"https://newsdata.io/api/1/news?apikey={API_KEY}&country=np&language=en"
 
-from generate_embeddings import get_embeddings
+
 
 
 DATA_PATH = "Data"
@@ -27,6 +31,7 @@ def load_pdfs() -> List[Document]:
         doc.metadata["source_type"]="pdf"
 
     return documents
+
 
 
 
@@ -64,6 +69,30 @@ def load_api_data() -> List[Document]:
     return documents
 
 
+
+
+
+def load_web_data(urls:List[str]) -> List[Document]:
+    web_docs = load_from_web(urls)
+    documents = []
+    
+    for doc in web_docs:
+        documents.append(
+
+         Document(
+            page_content=doc["content"],
+            metadata={
+                "source": doc["source"], 
+                "source_type":"web",
+                }
+        ))
+
+    return documents
+
+
+
+
+
 def split_documents(documents: List[Document]) -> List[Document]:
     chunks = []
 
@@ -79,14 +108,29 @@ def split_documents(documents: List[Document]) -> List[Document]:
         length_function=len,
     )
 
+    web_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=100,
+        length_function=len,
+    )
+
+
+
+
+
     for doc in documents:
         if doc.metadata.get("source_type")=="api":
             chunks.extend(api_splitter.split_documents([doc]))
 
+        elif doc.metadata.get("source_type")=="web":
+            chunks.extend(web_splitter.split_documents([doc]))
         else:
             chunks.extend(pdf_splitter.split_documents([doc]))
+
     
     return chunks
+
+
 
 
 
@@ -109,6 +153,8 @@ def calculate_chunk_ids(chunks: List[Document]) -> List[Document]:
         last_page_id = page_id
 
     return chunks
+
+
 
 
 
@@ -138,17 +184,33 @@ def add_to_vectorstore(chunks: List[Document]) -> None:
         print(" No new chunks to add — database is up to date")
 
 
+
+
+
+
 def clear_database() -> None:
     if os.path.exists(CHROMA_PATH):
         shutil.rmtree(CHROMA_PATH)
         print(" Chroma database cleared")
 
 
+
+
+
+
 def load_documents() -> List[Document]:
     documents = []
     documents.extend(load_pdfs())
     documents.extend(load_api_data())
+
+    web_urls = [
+        "https://realpython.com/python-web-scraping-practical-introduction/",
+        # "https://www.aryalanup.com.np/"
+    ]
+    documents.extend(load_web_data(web_urls))
     return documents
+
+
 
 
 def main():

@@ -2,7 +2,7 @@
 from query import query_rag
 
 def chat_loop():
-    print("🗨️ Welcome to RAG Chat! Type 'exit' to quit.\n")
+    print("Welcome to RAG Chat! Type 'exit' to quit.\n")
     
     chat_history = []
 
