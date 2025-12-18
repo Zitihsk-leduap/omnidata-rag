@@ -21,17 +21,19 @@ EVAL_QUERIES = [
     {
         "query": "How does a decision tree algorithm work?",
         "relevant_doc_ids": [
-            "pdf_thebook.pdf_page_165_chunk_2",
-            "web_page_0_chunk_102",
-            "web_page_0_chunk_50"
+            "pdf_thebook.pdf_page_215_chunk_2",
+            "pdf_thebook.pdf_page_196_chunk_1",
+            "pdf_thebook.pdf_page_222_chunk_1",
+            "pdf_thebook.pdf_page_150_chunk_2"
         ]
     },
     {
         "query": "What is monopoly and how is it played?",
         "relevant_doc_ids": [
-            "Data/monopoly.pdf_page_3_chunk_2",
-            "pdf_monopoly.pdf_page_3_chunk_2",
-            "pdf_monopoly.pdf_page_2_chunk_2"
+            "Data/ticket_to_ride.pdf_page_1_chunk_1",
+            "pdf_ticket_to_ride.pdf_page_1_chunk_1",
+            "Data/monopoly.pdf_page_1_chunk_2",
+            "pdf_monopoly.pdf_page_1_chunk_2"
         ]
     }
 ]
