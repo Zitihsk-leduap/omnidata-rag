@@ -12,9 +12,10 @@ EVAL_QUERIES = [
     {
         "query": "Explain the concept of overfitting in machine learning.",
         "relevant_doc_ids": [
-            "pdf_thebook.pdf_page_128_chunk_1",
-            "pdf_thebook.pdf_page_158_chunk_1",
-            "pdf_thebook.pdf_page_196_chunk_2"
+            "pdf_thebook.pdf_page_12_chunk_16",
+            "pdf_thebook.pdf_page_222_chunk_1",
+            "pdf_thebook.pdf_page_12_chunk_15",
+            "pdf_thebook.pdf_page_41_chunk_0"
         ]
     },
     {
