@@ -35,5 +35,15 @@ EVAL_QUERIES = [
             "Data/monopoly.pdf_page_1_chunk_2",
             "pdf_monopoly.pdf_page_1_chunk_2"
         ]
+    },
+
+    {
+        "query":"What is the difference between supervised and unsupervised learning?",
+        "relevant_doc_ids":[
+        "",
+        ""
+        ""
+        ]
     }
+
 ]
