@@ -1,4 +1,4 @@
-from fastapi install FastAPI
+from fastapi import FastAPI
 from pydantic import BaseModel
 from query import query_rag
 
