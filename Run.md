@@ -11,3 +11,4 @@ This project runs LLMs locally using **Ollama** inside Docker
 ### 1. Start Ollama
     ``` bash
     docker compose -f Docker/docker-commose.yml up
+
