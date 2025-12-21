@@ -3,38 +3,47 @@ import requests
 
 st.set_page_config(page_title="Omnidata RAG Chatbot", layout="wide")
 
-# Custom CSS for WhatsApp-like bubbles
+# Custom CSS for WhatsApp-like bubbles with left/right alignment
 st.markdown("""
 <style>
-    /* Container for the chat */
+    /* Container for all messages */
     .chat-container {
         display: flex;
         flex-direction: column;
         gap: 10px;
     }
+
+    /* Each message row */
+    .chat-row {
+        display: flex;
+        width: 100%;
+    }
+
     /* Common bubble styling */
     .chat-bubble {
         padding: 12px 18px;
         border-radius: 20px;
-        max-width: 70%;
+        max-width: 60%;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        margin-bottom: 10px;
         line-height: 1.4;
     }
+
     /* User message (Right aligned) */
     .user-bubble {
-        align-self: flex-end;
-        background-color: #005c4b; /* WhatsApp dark green */
+        background-color: #005c4b;
         color: white;
+        margin-left: auto; /* Push to right */
         border-bottom-right-radius: 2px;
     }
+
     /* Bot message (Left aligned) */
     .bot-bubble {
-        align-self: flex-start;
-        background-color: #202c33; /* WhatsApp dark gray/blue */
+        background-color: #202c33;
         color: #e9edef;
+        margin-right: auto; /* Push to left */
         border-bottom-left-radius: 2px;
     }
+
     /* Remove default Streamlit padding */
     .stChatMessage {
         background-color: transparent !important;
@@ -52,9 +61,9 @@ if "messages" not in st.session_state:
 st.markdown('<div class="chat-container">', unsafe_allow_html=True)
 for role, content in st.session_state.messages:
     if role == "User":
-        st.markdown(f'<div class="chat-bubble user-bubble">{content}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="chat-row"><div class="chat-bubble user-bubble">{content}</div></div>', unsafe_allow_html=True)
     else:
-        st.markdown(f'<div class="chat-bubble bot-bubble">{content}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="chat-row"><div class="chat-bubble bot-bubble">{content}</div></div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # User input
