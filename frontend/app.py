@@ -70,21 +70,37 @@ st.markdown('</div>', unsafe_allow_html=True)
 user_input = st.chat_input("Type your message here...")
 
 if user_input:
-    # Append user message
+    # Append user message immediately
     st.session_state.messages.append(("User", user_input))
-    
+    st.rerun()
+
+# Handle bot response AFTER rerun
+if st.session_state.messages and st.session_state.messages[-1][0] == "User":
+    last_user_message = st.session_state.messages[-1][1]
+
+    # Create placeholder for bot "typing"
+    bot_placeholder = st.empty()
+    bot_placeholder.markdown(
+        '<div class="chat-row"><div class="chat-bubble bot-bubble">Generating response...</div></div>',
+        unsafe_allow_html=True
+    )
+
     # Call backend RAG API
     try:
         response = requests.post(
             "http://localhost:8000/chat",
-            json={"message": user_input}
+            json={"message": last_user_message},
+            timeout=500
         ).json()
         bot_reply = response.get("reply", "No response from server.")
     except Exception as e:
         bot_reply = f"Error: {e}"
 
-    # Append bot response
+    # Replace placeholder with final bot response
+    bot_placeholder.markdown(
+        f'<div class="chat-row"><div class="chat-bubble bot-bubble">{bot_reply}</div></div>',
+        unsafe_allow_html=True
+    )
+
+    # Append bot message to session state
     st.session_state.messages.append(("Bot", bot_reply))
-    
-    # Rerun to update the UI with new messages
-    st.rerun()
