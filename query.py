@@ -96,7 +96,7 @@ def query_rag(query_text: str, k: int = 5, return_docs: bool = False):
     if return_docs:
         return response_text, retrieved_texts
     else:
-        return response_text, retrieved_doc_ids
+        return response_text
 
 
 if __name__ == "__main__":
