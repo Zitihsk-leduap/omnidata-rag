@@ -28,6 +28,9 @@ def chatbot_answer(user_input:set):
     if "who are you" in text_from_user:
         return "I am an AI-powered chatbot designed to assist you with your queries."
 
+    if "what is your purpose" in text_from_user:
+        return "My purpose is to provide helpful and accurate information to users like you."
+
     
     return query_rag(user_input)
 
