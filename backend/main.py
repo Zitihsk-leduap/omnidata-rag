@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from query import query_rag
+from AI.query import query_rag
 
 
 app = FastAPI()
