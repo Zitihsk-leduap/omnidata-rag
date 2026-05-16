@@ -9,19 +9,23 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
 
-from Scraper.scrape import load_from_web
+# from Scraper.scrape import load_from_web
 from generate_embeddings import get_embeddings
 
 
-API_KEY = "pub_f1220880c32346cd8f11360ae3eb6ae5"
-url = f"https://newsdata.io/api/1/news?apikey={API_KEY}&country=np&language=en"
+# API_KEY = "pub_f1220880c32346cd8f11360ae3eb6ae5"
+# url = f"https://newsdata.io/api/1/news?apikey={API_KEY}&country=np&language=en"
 
 
 
 
-DATA_PATH = "Data"
-CHROMA_PATH = "chroma"
+# DATA_PATH = "Data"
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_PATH = os.path.join(BASE_DIR, "Data")
+# CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
 
 def load_pdfs() -> List[Document]:
     loader = PyPDFDirectoryLoader(DATA_PATH)
@@ -72,22 +76,22 @@ def load_api_data() -> List[Document]:
 
 
 
-def load_web_data(urls:List[str]) -> List[Document]:
-    web_docs = load_from_web(urls)
-    documents = []
+# def load_web_data(urls:List[str]) -> List[Document]:
+#     web_docs = load_from_web(urls)
+#     documents = []
     
-    for doc in web_docs:
-        documents.append(
+#     for doc in web_docs:
+#         documents.append(
 
-         Document(
-            page_content=doc["content"],
-            metadata={
-                "source": doc["source"], 
-                "source_type":"web",
-                }
-        ))
+#          Document(
+#             page_content=doc["content"],
+#             metadata={
+#                 "source": doc["source"], 
+#                 "source_type":"web",
+#                 }
+#         ))
 
-    return documents
+#     return documents
 
 
 
@@ -102,17 +106,17 @@ def split_documents(documents: List[Document]) -> List[Document]:
         length_function=len,
     )
 
-    api_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
-        chunk_overlap=50,
-        length_function=len,
-    )
+    # api_splitter = RecursiveCharacterTextSplitter(
+    #     chunk_size=300,
+    #     chunk_overlap=50,
+    #     length_function=len,
+    # )
 
-    web_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100,
-        length_function=len,
-    )
+    # web_splitter = RecursiveCharacterTextSplitter(
+    #     chunk_size=500,
+    #     chunk_overlap=100,
+    #     length_function=len,
+    # )
 
 
 
@@ -164,7 +168,7 @@ def add_to_vectorstore(chunks: List[Document]) -> None:
         persist_directory=CHROMA_PATH,
         embedding_function=get_embeddings(),
     )
-
+    print("TOTAL CHUNKS IN DB:", len(db.get()["ids"]))
     chunks = calculate_chunk_ids(chunks)
 
     existing_items = db.get()
@@ -201,13 +205,13 @@ def clear_database() -> None:
 def load_documents() -> List[Document]:
     documents = []
     documents.extend(load_pdfs())
-    documents.extend(load_api_data())
+    # documents.extend(load_api_data())
 
-    web_urls = [
-        "https://realpython.com/python-web-scraping-practical-introduction/",
-        # "https://www.aryalanup.com.np/"
-    ]
-    documents.extend(load_web_data(web_urls))
+    # web_urls = [
+    #     "https://realpython.com/python-web-scraping-practical-introduction/",
+    #     # "https://www.aryalanup.com.np/"
+    # ]
+    # documents.extend(load_web_data(web_urls))
     return documents
 
 

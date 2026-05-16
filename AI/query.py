@@ -5,7 +5,12 @@ from langchain_ollama import OllamaLLM
 
 from generate_embeddings import get_embeddings
 
-CHROMA_PATH = "chroma"
+import os
+
+# CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
+
 
 PROMPT_TEMPLATE = """
 Answer the question based on the context below:
@@ -22,8 +27,11 @@ Answer the question based on the above context: {question}
 embedding_function = get_embeddings()
 db = Chroma(
     persist_directory=CHROMA_PATH,
-    embedding_function=embedding_function
+    embedding_function=get_embeddings(),
 )
+
+print("TOTAL CHUNKS IN DB:", len(db.get()["ids"]))
+
 # --------------------------------------------------
 
 
@@ -50,7 +58,9 @@ def query_rag(query_text: str, k: int = 5, return_docs: bool = False):
 
     # Retrieve top-K similar documents
     results = db.similarity_search_with_score(query_text, k=k)
-
+    # print("DB Count", db._collection_name())
+    print("Results Found", len(results))
+	
     # Optional prioritization logic (unchanged)
     if "latest" in query_text.lower() or "recent" in query_text.lower():
         api_docs = [(doc, score) for doc, score in results if doc.metadata.get("source_type") == "api"]
@@ -97,7 +107,10 @@ def query_rag(query_text: str, k: int = 5, return_docs: bool = False):
         return response_text, retrieved_texts
     else:
         return response_text
+    # docs = retriever.get_relevant_documents(query)
+    # print("DEBUG DOCS:", docs)
 
 
 if __name__ == "__main__":
     main()
+
