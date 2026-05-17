@@ -8,7 +8,7 @@ from langchain_ollama import OllamaLLM
 from generate_embeddings import get_embeddings
 
 # -----------------------------
-# Paths
+# PATHS
 # -----------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
@@ -16,30 +16,34 @@ CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
 print("CHROMA PATH:", CHROMA_PATH)
 
 # -----------------------------
-# PROMPT
+# STRICT PROMPT (FINAL FIXED VERSION)
 # -----------------------------
 PROMPT_TEMPLATE = """
-You are a STRICT document QA system for Nepal legal documents.
+You are a STRICT legal EXTRACTION system for Nepali law.
 
-RULES:
-- Answer ONLY from the given context.
-- Do NOT use outside knowledge.
-- Do NOT assume or guess missing information.
-- If answer is not EXACTLY present, say:
-  "Not clearly mentioned in the provided context."
-- Keep answer short and factual.
+RULES (ABSOLUTE):
+1. Use ONLY the provided context.
+2. DO NOT infer, explain, or assume anything.
+3. DO NOT calculate or derive values.
+4. DO NOT use outside knowledge.
+5. If exact answer is not in context, say:
+   "Answer not found in provided context."
 
-Context:
-{context}
+TASK:
+- Find the exact sentence(s) that answer the question.
+- Return ONLY those sentences as the answer.
 
 Question:
 {question}
 
-Answer:
+Context:
+{context}
+
+FINAL ANSWER:
 """
 
 # -----------------------------
-# DB
+# DATABASE
 # -----------------------------
 embedding_function = get_embeddings()
 
@@ -52,22 +56,42 @@ print("TOTAL CHUNKS IN DB:", len(db.get()["ids"]))
 
 
 # -----------------------------
+# RELEVANCE FILTER (IMPORTANT)
+# -----------------------------
+def filter_relevant(docs, query_text):
+    query_terms = query_text.lower().split()
+
+    scored = []
+    for doc in docs:
+        text = doc.page_content.lower()
+        score = sum(1 for t in query_terms if t in text)
+        scored.append((score, doc))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    # keep only TOP 3 most relevant chunks (VERY IMPORTANT)
+    return [doc for _, doc in scored[:3]]
+
+
+# -----------------------------
 # QUERY FUNCTION
 # -----------------------------
-def query_rag(query_text: str, k: int = 3, return_docs: bool = False):
+def query_rag(query_text: str, k: int = 10, return_docs: bool = False):
 
     query_text = query_text.strip()
 
-    # ✅ MMR retrieval (correct)
-    results = db.max_marginal_relevance_search(
-        query_text,
-        k=k,
-        fetch_k=20,
-        lambda_mult=0.7
-    )
+    # -----------------------------
+    # RETRIEVAL
+    # -----------------------------
+    results = db.similarity_search(query_text, k=k)
 
     # -----------------------------
-    # DEBUG
+    # FILTER (CRITICAL FIX)
+    # -----------------------------
+    results = filter_relevant(results, query_text)
+
+    # -----------------------------
+    # DEBUG OUTPUT
     # -----------------------------
     print("\n===== RETRIEVAL DEBUG =====")
 
@@ -79,22 +103,19 @@ def query_rag(query_text: str, k: int = 3, return_docs: bool = False):
     print("\nRetrieved chunks:", len(results))
 
     # -----------------------------
-    # CONTEXT BUILD (FIXED)
+    # CLEAN CONTEXT BUILD
     # -----------------------------
-    context_text = "\n\n---\n\n".join(
-        [
-            f"[{doc.metadata.get('id')}]\n{doc.page_content}"
-            for doc in results
-            if doc.page_content and len(doc.page_content.strip()) > 50
-        ]
+    context_text = "\n".join(
+        f"[{doc.metadata.get('id')}] {doc.page_content}"
+        for doc in results
     )
 
     # -----------------------------
-    # PROMPT
+    # PROMPT CREATION
     # -----------------------------
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
 
-    prompt = prompt_template.format_prompt(
+    final_prompt = prompt_template.format(
         context=context_text,
         question=query_text
     )
@@ -106,18 +127,18 @@ def query_rag(query_text: str, k: int = 3, return_docs: bool = False):
     # -----------------------------
     model = OllamaLLM(
         model="mistral",
-        temperature=0.1,
+        temperature=0.0,   # IMPORTANT: fully deterministic
         streaming=False,
         timeout=60
     )
 
     try:
-        response_text = model.invoke(prompt)
+        response_text = model.invoke(final_prompt)
     except Exception as e:
         response_text = f"LLM error: {e}"
 
     # -----------------------------
-    # SOURCES (FIXED)
+    # SOURCES
     # -----------------------------
     sources = [
         f"{doc.metadata.get('source_type','unknown')} | {doc.metadata.get('id')}"
