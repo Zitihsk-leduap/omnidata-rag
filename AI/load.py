@@ -2,245 +2,140 @@ import argparse
 import os
 import shutil
 from typing import List
-import requests
+import re
+import unicodedata
 
-from langchain_community.document_loaders import PyPDFDirectoryLoader
+from langchain_community.document_loaders import PyPDFDirectoryLoader, DirectoryLoader, PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
-# from Scraper.scrape import load_from_web
 from generate_embeddings import get_embeddings
 
 
-# API_KEY = "pub_f1220880c32346cd8f11360ae3eb6ae5"
-# url = f"https://newsdata.io/api/1/news?apikey={API_KEY}&country=np&language=en"
-
-
-
-
-# DATA_PATH = "Data"
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, "Data")
-# CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma")
+# ---------------- PATHS ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATA_PATH = os.path.join(BASE_DIR, "..", "Data")
+DATA_PATH = os.path.abspath(DATA_PATH)
+
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
 
+print("CHROMA PATH:", CHROMA_PATH)
+print("DATA PATH:", DATA_PATH)
+
+
+# ---------------- CLEAN TEXT ----------------
+def clean_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
+# ---------------- LOAD PDF ----------------
 def load_pdfs() -> List[Document]:
-    loader = PyPDFDirectoryLoader(DATA_PATH)
+    print("DATA PATH CHECK:", DATA_PATH)
+    print("FILES:", os.listdir(DATA_PATH))
+
+    loader = DirectoryLoader(DATA_PATH,
+    glob="**/*.pdf",
+    show_progress=True,
+    loader_cls=PyMuPDFLoader)
+
     documents = loader.load()
 
+    print("RAW DOCUMENTS LOADED:", len(documents))
+
     for doc in documents:
-        doc.metadata["source_type"]="pdf"
+        doc.metadata["source_type"] = "pdf"
 
     return documents
 
 
-
-
-def load_api_data() -> List[Document]:
-    documents = []
-
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching API data: {e}")
-        return documents
-    
-    # iterate over articles
-    for item in data.get("results", []):  # results is a list
-        content = f"""
-            Title: {item.get('title', 'N/A')}
-            Description: {item.get('description','N/A')}
-            Date: {item.get('pubDate','N/A')}
-            Link: {item.get('link','N/A')}
-"""
-        documents.append(
-            Document(
-                page_content=content.strip(),
-                metadata={
-                    "source_type": "api",
-                    "api_name": "newsdata",
-                    "timestamp": item.get("pubDate","N/A"),
-                    "link": item.get("link","N/A")
-                },
-            )
-        )
-
-    return documents
-
-
-
-
-
-# def load_web_data(urls:List[str]) -> List[Document]:
-#     web_docs = load_from_web(urls)
-#     documents = []
-    
-#     for doc in web_docs:
-#         documents.append(
-
-#          Document(
-#             page_content=doc["content"],
-#             metadata={
-#                 "source": doc["source"], 
-#                 "source_type":"web",
-#                 }
-#         ))
-
-#     return documents
-
-
-
-
-
+# ---------------- SPLIT ----------------
 def split_documents(documents: List[Document]) -> List[Document]:
-    chunks = []
-
-    pdf_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        length_function=len,
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=300,
+        chunk_overlap=50
     )
 
-    # api_splitter = RecursiveCharacterTextSplitter(
-    #     chunk_size=300,
-    #     chunk_overlap=50,
-    #     length_function=len,
-    # )
-
-    # web_splitter = RecursiveCharacterTextSplitter(
-    #     chunk_size=500,
-    #     chunk_overlap=100,
-    #     length_function=len,
-    # )
-
-
-
-
+    chunks = []
 
     for doc in documents:
-        if doc.metadata.get("source_type")=="api":
-            chunks.extend(api_splitter.split_documents([doc]))
+        split_chunks = splitter.split_documents([doc])
 
-        elif doc.metadata.get("source_type")=="web":
-            chunks.extend(web_splitter.split_documents([doc]))
-        else:
-            chunks.extend(pdf_splitter.split_documents([doc]))
-
-    
-    return chunks
-
-
-
-
-
-def calculate_chunk_ids(chunks: List[Document]) -> List[Document]:
-    last_page_id = None
-    chunk_index = 0
-
-    for chunk in chunks:
-        source_type = chunk.metadata.get("source_type", "unknown")
-        source_file = chunk.metadata.get("api_name", "unknown_api") if chunk.metadata.get("source_type")=="api" else os.path.basename(chunk.metadata.get("source", "unknown"))
-        page = chunk.metadata.get("page", 0)
-        page_id = f"{source_type}_{source_file}_page_{page}"
-
-        if page_id == last_page_id:
-            chunk_index += 1
-        else:
-            chunk_index = 0
-
-        chunk.metadata["id"] = f"{page_id}_chunk_{chunk_index}"
-        last_page_id = page_id
+        for chunk in split_chunks:
+            # CLEAN TEXT BEFORE EMBEDDING
+            chunk.page_content = clean_text(chunk.page_content)
+            chunks.append(chunk)
 
     return chunks
 
 
-
-
-
-
+# ---------------- VECTOR STORE ----------------
 def add_to_vectorstore(chunks: List[Document]) -> None:
     db = Chroma(
         persist_directory=CHROMA_PATH,
-        embedding_function=get_embeddings(),
+        embedding_function=get_embeddings()
     )
-    print("TOTAL CHUNKS IN DB:", len(db.get()["ids"]))
-    chunks = calculate_chunk_ids(chunks)
 
-    existing_items = db.get()
-    existing_ids = set(existing_items["ids"])
+    print("TOTAL BEFORE:", len(db.get()["ids"]))
+
+    # assign IDs
+    for i, chunk in enumerate(chunks):
+        chunk.metadata["id"] = f"chunk_{i}"
+
+    existing_ids = set(db.get().get("ids", []))
 
     new_chunks = [
-        chunk for chunk in chunks
-        if chunk.metadata["id"] not in existing_ids
+        c for c in chunks if c.metadata["id"] not in existing_ids
     ]
 
+    print("NEW CHUNKS:", len(new_chunks))
+
     if new_chunks:
-        print(f"Adding {len(new_chunks)} new chunks to Chroma")
-        new_chunk_ids = [chunk.metadata["id"] for chunk in new_chunks]
-        db.add_documents(new_chunks, ids=new_chunk_ids)
-        db.persist()
-    else:
-        print(" No new chunks to add — database is up to date")
+        db.add_documents(
+            new_chunks,
+            ids=[c.metadata["id"] for c in new_chunks]
+        )
+
+    print("TOTAL AFTER:", len(db.get()["ids"]))
 
 
-
-
-
-
-def clear_database() -> None:
+# ---------------- CLEAR DB ----------------
+def clear_database():
     if os.path.exists(CHROMA_PATH):
         shutil.rmtree(CHROMA_PATH)
-        print(" Chroma database cleared")
+        print("DB CLEARED")
 
 
+# ---------------- LOAD DOCS ----------------
+def load_documents():
+    return load_pdfs()
 
 
-
-
-def load_documents() -> List[Document]:
-    documents = []
-    documents.extend(load_pdfs())
-    # documents.extend(load_api_data())
-
-    # web_urls = [
-    #     "https://realpython.com/python-web-scraping-practical-introduction/",
-    #     # "https://www.aryalanup.com.np/"
-    # ]
-    # documents.extend(load_web_data(web_urls))
-    return documents
-
-
-
-
+# ---------------- MAIN ----------------
 def main():
-    parser = argparse.ArgumentParser(description="Ingest PDFs into Chroma DB")
-    parser.add_argument(
-        "--clear_db",
-        action="store_true",
-        help="Clear the existing Chroma database before ingesting",
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--clear_db", action="store_true")
+
     args = parser.parse_args()
 
     if args.clear_db:
         clear_database()
 
-    print("Loading documents...")
-    documents = load_documents()
-    print(f" Loaded {len(documents)} documents")
+    print("Loading PDFs...")
+    docs = load_documents()
+    print("Docs:", len(docs))
 
-    print(" Splitting documents into chunks...")
-    chunks = split_documents(documents)
-    print(f" Created {len(chunks)} chunks")
+    print("Splitting...")
+    chunks = split_documents(docs)
+    print("Chunks:", len(chunks))
 
-    print(" Storing chunks in vector database...")
+    print("Adding to vector DB...")
     add_to_vectorstore(chunks)
 
-    print("Ingestion complete!")
+    print("DONE")
 
 
 if __name__ == "__main__":
