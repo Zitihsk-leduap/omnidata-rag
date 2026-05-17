@@ -1,116 +1,164 @@
 import argparse
+import os
+import re
+
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM
 
 from generate_embeddings import get_embeddings
 
-import os
 
-# CHROMA_PATH = os.path.join(os.path.dirname(__file__), "chroma")
+# -----------------------------
+# Paths
+# -----------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
+print("CHROMA PATH:", CHROMA_PATH)
 
-
+# -----------------------------
+# STRICT PROMPT (important)
+# -----------------------------
 PROMPT_TEMPLATE = """
-Answer the question based on the context below:
+You are a constitutional legal assistant for Nepal.
+
+RULES:
+- Answer ONLY from the provided context.
+- Do NOT use outside knowledge.
+- Extract the answer directly from the context.
+- The context may contain OCR noise or slightly broken Nepali words.
+- You must understand the intended meaning of the text.
+- If the answer is clearly present, answer confidently.
+- Only say "Not clearly mentioned in provided text." if the answer truly does not exist in the context.
+- Preserve the language of the question.
+
+Context:
 {context}
 
----
+Question:
+{question}
 
-Answer the question based on the above context: {question}
+Answer:
 """
 
-# --------------------------------------------------
-# Initialize embeddings and Chroma ONCE
-# --------------------------------------------------
+# -----------------------------
+# Embeddings + DB (IMPORTANT FIX)
+# -----------------------------
 embedding_function = get_embeddings()
+
 db = Chroma(
     persist_directory=CHROMA_PATH,
-    embedding_function=get_embeddings(),
+    embedding_function=embedding_function,
 )
 
 print("TOTAL CHUNKS IN DB:", len(db.get()["ids"]))
 
-# --------------------------------------------------
 
+# -----------------------------
+# Query normalization
+# -----------------------------
+# def normalize_query(text: str) -> str:
+#     text = text.strip()
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("query_text", type=str, help="The query text to search for.")
-    args = parser.parse_args()
-    query_text = args.query_text
-    query_rag(query_text)
+#     is_nepali = bool(re.search(r'[\u0900-\u097F]', text))
 
+#     if is_nepali:
+#         return "Nepali: " + text
+#     else:
+#         return "English: " + text
 
-def query_rag(query_text: str, k: int = 5, return_docs: bool = False):
-    """
-    RAG query function.
-    
-    Args:
-        query_text (str): The user query.
-        k (int): Number of top documents to retrieve from Chroma.
-        return_docs (bool): If True, return retrieved doc texts; else return doc IDs.
-        
-    Returns:
-        Tuple[str, List[str]]: (LLM response, list of retrieved doc texts or doc IDs)
-    """
+def normalize_query(text: str) -> str:
+    return text.strip()
 
-    # Retrieve top-K similar documents
-    results = db.similarity_search_with_score(query_text, k=k)
-    # print("DB Count", db._collection_name())
-    print("Results Found", len(results))
-	
-    # Optional prioritization logic (unchanged)
-    if "latest" in query_text.lower() or "recent" in query_text.lower():
-        api_docs = [(doc, score) for doc, score in results if doc.metadata.get("source_type") == "api"]
-        other_docs = [(doc, score) for doc, score in results if doc.metadata.get("source_type") != "api"]
-        results = api_docs + other_docs
+# -----------------------------
+# Main RAG function
+# -----------------------------
+def query_rag(query_text: str, k: int = 10, return_docs: bool = False):
 
-    # Prepare context
+    # Normalize query (IMPORTANT FIX)
+    query_text = normalize_query(query_text)
+
+    # Retrieval (better for legal QA than MMR)
+    results = db.similarity_search_with_score(
+        query_text,
+        k=k
+    )
+
+    # -------------------------
+    # DEBUG OUTPUT
+    # -------------------------
+    print("\n===== RETRIEVAL DEBUG =====")
+    for i, (doc, score) in enumerate(results):
+        print(f"\n[{i}] SCORE: {score}")
+        print("ID:", doc.metadata.get("id"))
+        print(doc.page_content[:250])
+
+    print("\nRetrieved chunks:", len(results))
+
+    # -------------------------
+    # Build context
+    # -------------------------
     context_text = "\n\n---\n\n".join(
-        [f"[{doc.metadata.get('source_type', 'unknown')}]\n{doc.page_content}" for doc, _ in results]
+        [
+            f"[{doc.metadata.get('source_type', 'unknown')}]\n{doc.page_content}"
+            for doc, _ in results
+        ]
     )
 
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+
     prompt = prompt_template.format_prompt(
         context=context_text,
         question=query_text
     )
 
-    print("Retrieved chunks from Chroma:", len(results))
-    print("Sending prompt to LLM...")
+    print("\nSending prompt to LLM...")
 
-    # Initialize LLM (unchanged)
-    model = OllamaLLM(model="smollm2", streaming=False, timeout=30)
+    # -------------------------
+    # LLM (Mistral via Ollama)
+    # -------------------------
+    model = OllamaLLM(
+        model="mistral",
+        temperature=0.2,
+        streaming=False,
+        timeout=60
+    )
 
     try:
         response_text = model.invoke(prompt)
     except Exception as e:
         response_text = f"LLM error: {e}"
 
-    # Prepare outputs
-    retrieved_doc_ids = [doc.metadata.get("id") for doc, _ in results]
-    retrieved_texts = [doc.page_content for doc, _ in results]
-
-    # Print response
+    # -------------------------
+    # Sources formatting
+    # -------------------------
     sources = [
         f"{doc.metadata.get('source_type','unknown')} | {doc.metadata.get('id')}"
         for doc, _ in results
     ]
+
     formatted_response = (
-        f"Response:\n{response_text}\n\nSources:\n" + "\n".join(sources)
+        f"\nResponse:\n{response_text}\n\nSources:\n" + "\n".join(sources)
     )
+
     print(formatted_response)
 
     if return_docs:
-        return response_text, retrieved_texts
-    else:
-        return response_text
-    # docs = retriever.get_relevant_documents(query)
-    # print("DEBUG DOCS:", docs)
+        return response_text, [doc.page_content for doc, _ in results]
+
+    return response_text
+
+
+# -----------------------------
+# CLI entry
+# -----------------------------
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("query_text", type=str)
+    args = parser.parse_args()
+
+    query_rag(args.query_text)
 
 
 if __name__ == "__main__":
     main()
-
