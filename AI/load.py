@@ -55,7 +55,7 @@ def load_pdfs() -> List[Document]:
 # ---------------- SPLIT ----------------
 def split_documents(documents: List[Document]) -> List[Document]:
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
+        chunk_size=800,
         chunk_overlap=50
     )
 

@@ -1,6 +1,5 @@
 import argparse
 import os
-import re
 
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
@@ -8,29 +7,27 @@ from langchain_ollama import OllamaLLM
 
 from generate_embeddings import get_embeddings
 
-
 # -----------------------------
 # Paths
 # -----------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
+
 print("CHROMA PATH:", CHROMA_PATH)
 
 # -----------------------------
-# STRICT PROMPT (important)
+# PROMPT
 # -----------------------------
 PROMPT_TEMPLATE = """
-You are a constitutional legal assistant for Nepal.
+You are a STRICT document QA system for Nepal legal documents.
 
 RULES:
-- Answer ONLY from the provided context.
+- Answer ONLY from the given context.
 - Do NOT use outside knowledge.
-- Extract the answer directly from the context.
-- The context may contain OCR noise or slightly broken Nepali words.
-- You must understand the intended meaning of the text.
-- If the answer is clearly present, answer confidently.
-- Only say "Not clearly mentioned in provided text." if the answer truly does not exist in the context.
-- Preserve the language of the question.
+- Do NOT assume or guess missing information.
+- If answer is not EXACTLY present, say:
+  "Not clearly mentioned in the provided context."
+- Keep answer short and factual.
 
 Context:
 {context}
@@ -42,7 +39,7 @@ Answer:
 """
 
 # -----------------------------
-# Embeddings + DB (IMPORTANT FIX)
+# DB
 # -----------------------------
 embedding_function = get_embeddings()
 
@@ -55,56 +52,46 @@ print("TOTAL CHUNKS IN DB:", len(db.get()["ids"]))
 
 
 # -----------------------------
-# Query normalization
+# QUERY FUNCTION
 # -----------------------------
-# def normalize_query(text: str) -> str:
-#     text = text.strip()
+def query_rag(query_text: str, k: int = 3, return_docs: bool = False):
 
-#     is_nepali = bool(re.search(r'[\u0900-\u097F]', text))
+    query_text = query_text.strip()
 
-#     if is_nepali:
-#         return "Nepali: " + text
-#     else:
-#         return "English: " + text
-
-def normalize_query(text: str) -> str:
-    return text.strip()
-
-# -----------------------------
-# Main RAG function
-# -----------------------------
-def query_rag(query_text: str, k: int = 10, return_docs: bool = False):
-
-    # Normalize query (IMPORTANT FIX)
-    query_text = normalize_query(query_text)
-
-    # Retrieval (better for legal QA than MMR)
-    results = db.similarity_search_with_score(
+    # ✅ MMR retrieval (correct)
+    results = db.max_marginal_relevance_search(
         query_text,
-        k=k
+        k=k,
+        fetch_k=20,
+        lambda_mult=0.7
     )
 
-    # -------------------------
-    # DEBUG OUTPUT
-    # -------------------------
+    # -----------------------------
+    # DEBUG
+    # -----------------------------
     print("\n===== RETRIEVAL DEBUG =====")
-    for i, (doc, score) in enumerate(results):
-        print(f"\n[{i}] SCORE: {score}")
+
+    for i, doc in enumerate(results):
+        print(f"\n[{i}]")
         print("ID:", doc.metadata.get("id"))
         print(doc.page_content[:250])
 
     print("\nRetrieved chunks:", len(results))
 
-    # -------------------------
-    # Build context
-    # -------------------------
+    # -----------------------------
+    # CONTEXT BUILD (FIXED)
+    # -----------------------------
     context_text = "\n\n---\n\n".join(
         [
-            f"[{doc.metadata.get('source_type', 'unknown')}]\n{doc.page_content}"
-            for doc, _ in results
+            f"[{doc.metadata.get('id')}]\n{doc.page_content}"
+            for doc in results
+            if doc.page_content and len(doc.page_content.strip()) > 50
         ]
     )
 
+    # -----------------------------
+    # PROMPT
+    # -----------------------------
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
 
     prompt = prompt_template.format_prompt(
@@ -114,12 +101,12 @@ def query_rag(query_text: str, k: int = 10, return_docs: bool = False):
 
     print("\nSending prompt to LLM...")
 
-    # -------------------------
-    # LLM (Mistral via Ollama)
-    # -------------------------
+    # -----------------------------
+    # LLM
+    # -----------------------------
     model = OllamaLLM(
         model="mistral",
-        temperature=0.2,
+        temperature=0.1,
         streaming=False,
         timeout=60
     )
@@ -129,28 +116,29 @@ def query_rag(query_text: str, k: int = 10, return_docs: bool = False):
     except Exception as e:
         response_text = f"LLM error: {e}"
 
-    # -------------------------
-    # Sources formatting
-    # -------------------------
+    # -----------------------------
+    # SOURCES (FIXED)
+    # -----------------------------
     sources = [
         f"{doc.metadata.get('source_type','unknown')} | {doc.metadata.get('id')}"
-        for doc, _ in results
+        for doc in results
     ]
 
     formatted_response = (
-        f"\nResponse:\n{response_text}\n\nSources:\n" + "\n".join(sources)
+        f"\nResponse:\n{response_text}\n\nSources:\n" +
+        "\n".join(sources)
     )
 
     print(formatted_response)
 
     if return_docs:
-        return response_text, [doc.page_content for doc, _ in results]
+        return response_text, [doc.page_content for doc in results]
 
     return response_text
 
 
 # -----------------------------
-# CLI entry
+# CLI
 # -----------------------------
 def main():
     parser = argparse.ArgumentParser()
