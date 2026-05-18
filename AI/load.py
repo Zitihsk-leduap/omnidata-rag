@@ -76,27 +76,59 @@ def preprocess_documents(docs: List[Document]) -> List[Document]:
 
 # ---------------- CHUNKING ----------------
 def split_documents(docs: List[Document]) -> List[Document]:
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=900,
-        chunk_overlap=0
-    )
-
     chunks = []
 
+    # clause markers (legal structure)
+    clause_pattern = r'(\([क-ह]+\))'
+
     for d in docs:
-        parts = splitter.split_documents([d])
+        text = d.page_content
 
-        for p in parts:
-            p.page_content = clean_text(p.page_content)
+        # STEP 1: split by clauses first (MOST IMPORTANT)
+        parts = re.split(clause_pattern, text)
 
-            if len(p.page_content) < 60:
+        buffer = ""
+
+        for part in parts:
+            part = part.strip()
+            if not part:
                 continue
 
-            chunks.append(p)
+            # if it's a clause marker, attach it
+            if re.match(clause_pattern, part):
+                buffer += " " + part
+                continue
+
+            buffer += " " + part
+
+            # STEP 2: finalize chunk when it becomes meaningful size
+            if len(buffer) > 400:
+                cleaned = clean_text(buffer)
+
+                if len(cleaned) > 60:
+                    chunks.append(
+                        Document(
+                            page_content=cleaned,
+                            metadata=d.metadata.copy()
+                        )
+                    )
+
+                buffer = ""
+
+        # leftover buffer
+        if buffer.strip():
+            cleaned = clean_text(buffer)
+
+            if len(cleaned) > 60:
+                chunks.append(
+                    Document(
+                        page_content=cleaned,
+                        metadata=d.metadata.copy()
+                    )
+                )
 
     print("Final chunks:", len(chunks))
     return chunks
-
 
 # ---------------- VECTOR STORE ----------------
 def add_to_vectorstore(chunks: List[Document]):
