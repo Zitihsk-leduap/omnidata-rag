@@ -9,12 +9,14 @@ model = BGEM3FlagModel(
     device="cpu"
 )
 
-
 class BGEM3Embedding:
     def embed_documents(self, texts):
+        if not texts:
+            return []
+
         return model.encode(
             texts,
-            batch_size=2,
+            batch_size=8,
             max_length=512,
             return_dense=True
         )["dense_vecs"].tolist()

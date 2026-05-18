@@ -5,7 +5,10 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM
 
+from FlagEmbedding import FlagReranker
+
 from generate_embeddings import get_embeddings
+
 
 # -----------------------------
 # PATHS
@@ -15,23 +18,38 @@ CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
 
 print("CHROMA PATH:", CHROMA_PATH)
 
+
 # -----------------------------
-# STRICT PROMPT (FINAL FIXED VERSION)
+# MULTILINGUAL RERANKER
+# IMPORTANT FIX
+# -----------------------------
+print("Loading multilingual reranker...")
+
+reranker = FlagReranker(
+    "BAAI/bge-reranker-v2-m3",
+    use_fp16=False
+)
+
+print("Reranker loaded.")
+
+
+# -----------------------------
+# PROMPT
 # -----------------------------
 PROMPT_TEMPLATE = """
-You are a STRICT legal EXTRACTION system for Nepali law.
+You are a STRICT Nepali legal extraction system.
 
-RULES (ABSOLUTE):
+RULES:
 1. Use ONLY the provided context.
-2. DO NOT infer, explain, or assume anything.
-3. DO NOT calculate or derive values.
-4. DO NOT use outside knowledge.
-5. If exact answer is not in context, say:
+2. DO NOT use outside knowledge.
+3. DO NOT infer or assume.
+4. DO NOT summarize unrelated content.
+5. If answer is not explicitly present, say:
    "Answer not found in provided context."
 
 TASK:
-- Find the exact sentence(s) that answer the question.
-- Return ONLY those sentences as the answer.
+- Extract ONLY the exact legal statement that answers the question.
+- Keep the answer concise.
 
 Question:
 {question}
@@ -41,6 +59,7 @@ Context:
 
 FINAL ANSWER:
 """
+
 
 # -----------------------------
 # DATABASE
@@ -52,110 +71,114 @@ db = Chroma(
     embedding_function=embedding_function,
 )
 
-print("TOTAL CHUNKS IN DB:", len(db.get()["ids"]))
-
-
-# -----------------------------
-# RELEVANCE FILTER (IMPORTANT)
-# -----------------------------
-def filter_relevant(docs, query_text):
-    query_terms = query_text.lower().split()
-
-    scored = []
-    for doc in docs:
-        text = doc.page_content.lower()
-        score = sum(1 for t in query_terms if t in text)
-        scored.append((score, doc))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    # keep only TOP 3 most relevant chunks (VERY IMPORTANT)
-    return [doc for _, doc in scored[:3]]
+print("TOTAL CHUNKS:", len(db.get()["ids"]))
 
 
 # -----------------------------
 # QUERY FUNCTION
 # -----------------------------
-def query_rag(query_text: str, k: int = 10, return_docs: bool = False):
+def query_rag(query_text: str, k: int = 25):
 
     query_text = query_text.strip()
 
-    # -----------------------------
-    # RETRIEVAL
-    # -----------------------------
-    results = db.similarity_search(query_text, k=k)
+    print("\nSearching vector DB...")
 
     # -----------------------------
-    # FILTER (CRITICAL FIX)
+    # STEP 1: VECTOR SEARCH
     # -----------------------------
-    results = filter_relevant(results, query_text)
+    docs = db.similarity_search(
+        query_text,
+        k=k
+    )
+
+    if not docs:
+        print("No documents found.")
+        return
+
+    print(f"Retrieved {len(docs)} candidate chunks.")
 
     # -----------------------------
-    # DEBUG OUTPUT
+    # STEP 2: MULTILINGUAL RERANK
     # -----------------------------
-    print("\n===== RETRIEVAL DEBUG =====")
+    print("\nReranking results...")
 
-    for i, doc in enumerate(results):
+    pairs = [
+        [query_text, d.page_content[:1000]]
+        for d in docs
+    ]
+
+    scores = reranker.compute_score(pairs)
+
+    reranked = sorted(
+        zip(scores, docs),
+        key=lambda x: x[0],
+        reverse=True
+    )
+
+    # -----------------------------
+    # TAKE TOP 5
+    # -----------------------------
+    top_docs = [d for _, d in reranked[:5]]
+
+    # -----------------------------
+    # DEBUG
+    # -----------------------------
+    print("\n===== TOP 5 RERANKED CHUNKS =====")
+
+    for i, d in enumerate(top_docs):
         print(f"\n[{i}]")
-        print("ID:", doc.metadata.get("id"))
-        print(doc.page_content[:250])
-
-    print("\nRetrieved chunks:", len(results))
+        print("ID:", d.metadata.get("id"))
+        print(d.page_content[:400])
 
     # -----------------------------
-    # CLEAN CONTEXT BUILD
+    # CONTEXT BUILD
     # -----------------------------
-    context_text = "\n".join(
-        f"[{doc.metadata.get('id')}] {doc.page_content}"
-        for doc in results
+    context = "\n\n---\n\n".join(
+        f"[{d.metadata.get('id')}]\n{d.page_content}"
+        for d in top_docs
     )
 
     # -----------------------------
-    # PROMPT CREATION
+    # PROMPT BUILD
     # -----------------------------
-    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-
-    final_prompt = prompt_template.format(
-        context=context_text,
-        question=query_text
+    prompt = ChatPromptTemplate.from_template(
+        PROMPT_TEMPLATE
+    ).format(
+        question=query_text,
+        context=context
     )
 
-    print("\nSending prompt to LLM...")
+    print("\nSending to LLM...")
 
     # -----------------------------
     # LLM
     # -----------------------------
     model = OllamaLLM(
         model="mistral",
-        temperature=0.0,   # IMPORTANT: fully deterministic
-        streaming=False,
-        timeout=60
+        temperature=0.0,
+        num_predict=256
     )
 
     try:
-        response_text = model.invoke(final_prompt)
+        answer = model.invoke(prompt)
     except Exception as e:
-        response_text = f"LLM error: {e}"
+        answer = f"LLM ERROR: {e}"
 
     # -----------------------------
-    # SOURCES
+    # OUTPUT
     # -----------------------------
-    sources = [
-        f"{doc.metadata.get('source_type','unknown')} | {doc.metadata.get('id')}"
-        for doc in results
-    ]
+    print("\n================ ANSWER ================\n")
+    print(answer)
 
-    formatted_response = (
-        f"\nResponse:\n{response_text}\n\nSources:\n" +
-        "\n".join(sources)
-    )
+    print("\n================ SOURCES ================\n")
 
-    print(formatted_response)
+    for d in top_docs:
+        print(
+            f"{d.metadata.get('source_type', 'unknown')} "
+            f"| {d.metadata.get('id')}"
+        )
 
-    if return_docs:
-        return response_text, [doc.page_content for doc in results]
-
-    return response_text
+    return answer
 
 
 # -----------------------------
@@ -164,6 +187,7 @@ def query_rag(query_text: str, k: int = 10, return_docs: bool = False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("query_text", type=str)
+
     args = parser.parse_args()
 
     query_rag(args.query_text)

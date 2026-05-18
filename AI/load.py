@@ -1,11 +1,12 @@
 import argparse
 import os
 import shutil
-from typing import List
 import re
 import unicodedata
+import hashlib
+from typing import List
 
-from langchain_community.document_loaders import PyPDFDirectoryLoader, DirectoryLoader, PyMuPDFLoader
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
@@ -15,124 +16,144 @@ from generate_embeddings import get_embeddings
 
 # ---------------- PATHS ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-DATA_PATH = os.path.join(BASE_DIR, "..", "Data")
-DATA_PATH = os.path.abspath(DATA_PATH)
-
+DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "Data"))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
 
 print("CHROMA PATH:", CHROMA_PATH)
 print("DATA PATH:", DATA_PATH)
 
 
-# ---------------- CLEAN TEXT ----------------
+# ---------------- CLEAN ----------------
 def clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
-# ---------------- LOAD PDF ----------------
-def load_pdfs() -> List[Document]:
-    print("DATA PATH CHECK:", DATA_PATH)
-    print("FILES:", os.listdir(DATA_PATH))
+# ---------------- LOAD TXT FILES ----------------
+def load_txt_files() -> List[Document]:
+    loader = DirectoryLoader(
+        DATA_PATH,
+        glob="**/*.txt",
+        loader_cls=TextLoader,
+        show_progress=True
+    )
 
-    loader = DirectoryLoader(DATA_PATH,
-    glob="**/*.pdf",
-    show_progress=True,
-    loader_cls=PyMuPDFLoader)
+    docs = loader.load()
 
-    documents = loader.load()
+    for d in docs:
+        d.metadata["source_type"] = "txt"
 
-    print("RAW DOCUMENTS LOADED:", len(documents))
-
-    for doc in documents:
-        doc.metadata["source_type"] = "pdf"
-
-    return documents
+    return docs
 
 
-# ---------------- SPLIT ----------------
-def split_documents(documents: List[Document]) -> List[Document]:
+# ---------------- STRUCTURE SPLIT (IMPORTANT FOR NEPALI LAW) ----------------
+def preprocess_documents(docs: List[Document]) -> List[Document]:
+    processed = []
+
+    for doc in docs:
+        text = clean_text(doc.page_content)
+
+        # split by legal markers (NEPALI + ENGLISH)
+        sections = re.split(r'(?=\d+\.)|(?=धारा)|(?=परिच्छेद)|(?=Section)', text)
+
+        for sec in sections:
+            sec = sec.strip()
+
+            if len(sec) < 80:
+                continue
+
+            processed.append(
+                Document(
+                    page_content=sec,
+                    metadata=doc.metadata.copy()
+                )
+            )
+
+    print("After preprocessing:", len(processed))
+    return processed
+
+
+# ---------------- CHUNKING ----------------
+def split_documents(docs: List[Document]) -> List[Document]:
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=800,
-        chunk_overlap=50
+        chunk_size=900,
+        chunk_overlap=0
     )
 
     chunks = []
 
-    for doc in documents:
-        split_chunks = splitter.split_documents([doc])
+    for d in docs:
+        parts = splitter.split_documents([d])
 
-        for chunk in split_chunks:
-            # CLEAN TEXT BEFORE EMBEDDING
-            chunk.page_content = clean_text(chunk.page_content)
-            chunks.append(chunk)
+        for p in parts:
+            p.page_content = clean_text(p.page_content)
 
+            if len(p.page_content) < 60:
+                continue
+
+            chunks.append(p)
+
+    print("Final chunks:", len(chunks))
     return chunks
 
 
 # ---------------- VECTOR STORE ----------------
-def add_to_vectorstore(chunks: List[Document]) -> None:
+def add_to_vectorstore(chunks: List[Document]):
     db = Chroma(
         persist_directory=CHROMA_PATH,
         embedding_function=get_embeddings()
     )
 
-    print("TOTAL BEFORE:", len(db.get()["ids"]))
+    print("BEFORE:", len(db.get().get("ids", [])))
 
-    # assign IDs
-    for i, chunk in enumerate(chunks):
-        chunk.metadata["id"] = f"chunk_{i}"
+    for c in chunks:
+        c.metadata["id"] = hashlib.md5(
+            c.page_content.encode()
+        ).hexdigest()
 
-    existing_ids = set(db.get().get("ids", []))
+    # avoid duplicates in same run
+    seen = set()
+    unique = []
 
-    new_chunks = [
-        c for c in chunks if c.metadata["id"] not in existing_ids
-    ]
+    for c in chunks:
+        if c.metadata["id"] not in seen:
+            unique.append(c)
+            seen.add(c.metadata["id"])
 
-    print("NEW CHUNKS:", len(new_chunks))
+    db.add_documents(
+        unique,
+        ids=[c.metadata["id"] for c in unique]
+    )
 
-    if new_chunks:
-        db.add_documents(
-            new_chunks,
-            ids=[c.metadata["id"] for c in new_chunks]
-        )
-
-    print("TOTAL AFTER:", len(db.get()["ids"]))
+    print("AFTER:", len(db.get().get("ids", [])))
 
 
 # ---------------- CLEAR DB ----------------
-def clear_database():
+def clear_db():
     if os.path.exists(CHROMA_PATH):
         shutil.rmtree(CHROMA_PATH)
         print("DB CLEARED")
 
 
-# ---------------- LOAD DOCS ----------------
-def load_documents():
-    return load_pdfs()
-
-
-# ---------------- MAIN ----------------
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--clear_db", action="store_true")
-
     args = parser.parse_args()
 
     if args.clear_db:
-        clear_database()
+        clear_db()
 
-    print("Loading PDFs...")
-    docs = load_documents()
-    print("Docs:", len(docs))
+    print("Loading TXT files...")
+    docs = load_txt_files()
 
-    print("Splitting...")
+    print("Preprocessing...")
+    docs = preprocess_documents(docs)
+
+    print("Chunking...")
     chunks = split_documents(docs)
-    print("Chunks:", len(chunks))
 
-    print("Adding to vector DB...")
+    print("Saving to DB...")
     add_to_vectorstore(chunks)
 
     print("DONE")
