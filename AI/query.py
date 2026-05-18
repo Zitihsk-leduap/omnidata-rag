@@ -37,25 +37,23 @@ print("Reranker loaded.")
 # PROMPT
 # -----------------------------
 PROMPT_TEMPLATE = """
-You are a STRICT Nepali legal extraction system.
 
-RULES:
-1. Use ONLY the provided context.
-2. DO NOT use outside knowledge.
-3. DO NOT infer or assume.
-4. DO NOT summarize unrelated content.
-5. If answer is not explicitly present, say:
-   "Answer not found in provided context."
+You are a legal assistant.
 
-TASK:
-- Extract ONLY the exact legal statement that answers the question.
-- Keep the answer concise.
+Answer ONLY using the given context.
+
+Rules:
+- Do NOT summarize broadly
+- Do NOT add external knowledge
+- Extract exact legal rule if present
+- If answer is not in context, say "Not found in provided text"
+
+Context:
+{context}
 
 Question:
 {question}
 
-Context:
-{context}
 
 FINAL ANSWER:
 """
@@ -77,7 +75,7 @@ print("TOTAL CHUNKS:", len(db.get()["ids"]))
 # -----------------------------
 # QUERY FUNCTION
 # -----------------------------
-def query_rag(query_text: str, k: int = 25):
+def query_rag(query_text: str, k: int = 10):
 
     query_text = query_text.strip()
 
