@@ -4,7 +4,6 @@ import os
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM
-
 from FlagEmbedding import FlagReranker
 
 from generate_embeddings import get_embeddings
@@ -20,8 +19,7 @@ print("CHROMA PATH:", CHROMA_PATH)
 
 
 # -----------------------------
-# MULTILINGUAL RERANKER
-# IMPORTANT FIX
+# RERANKER
 # -----------------------------
 print("Loading multilingual reranker...")
 
@@ -34,39 +32,70 @@ print("Reranker loaded.")
 
 
 # -----------------------------
+# DATE NORMALIZATION (NEW ADDITION)
+# -----------------------------
+BS_MONTHS = {
+    "बैशाख": "01",
+    "जेठ": "02",
+    "असार": "03",
+    "श्रावण": "04",
+    "भदौ": "05",
+    "आश्विन": "06",
+    "कार्तिक": "07",
+    "मंसिर": "08",
+    "पौष": "09",
+    "माघ": "10",
+    "फाल्गुन": "11",
+    "चैत्र": "12"
+}
+
+def normalize_bs_date(text: str) -> str:
+    import re
+
+    def repl(match):
+        year = match.group(1)
+        month = match.group(2)
+        day = match.group(3)
+
+        month_num = BS_MONTHS.get(month, "00")
+
+        return f"{year}-{month_num}-{int(day):02d}"
+
+    pattern = r"(\d{4})\s*साल\s*([^\s]+)\s*(\d{1,2})\s*गते"
+    return re.sub(pattern, repl, text)
+
+
+# -----------------------------
 # PROMPT
 # -----------------------------
 PROMPT_TEMPLATE = """
+You are a STRICT LEGAL TEXT EXTRACTION SYSTEM.
 
-You are a legal assistant.
+ABSOLUTE RULES:
+1. Use ONLY the provided context.
+2. DO NOT explain.
+3. DO NOT infer.
+4. DO NOT translate Nepali text.
+5. DO NOT convert or change meaning.
+6. COPY EXACT sentence(s) from context.
+7. Keep numbers and dates EXACT as in source.
 
-Answer ONLY using the given context.
-
-Rules:
-- Do NOT summarize broadly
-- Do NOT add external knowledge
-- Extract exact legal rule if present
-- If answer is not in context, say "Not found in provided text"
-
-Context:
-{context}
-
-Question:
+QUESTION:
 {question}
 
+CONTEXT:
+{context}
 
-FINAL ANSWER:
+EXTRACTED ANSWER:
 """
 
 
 # -----------------------------
 # DATABASE
 # -----------------------------
-embedding_function = get_embeddings()
-
 db = Chroma(
     persist_directory=CHROMA_PATH,
-    embedding_function=embedding_function,
+    embedding_function=get_embeddings(),
 )
 
 print("TOTAL CHUNKS:", len(db.get()["ids"]))
@@ -82,12 +111,9 @@ def query_rag(query_text: str, k: int = 10):
     print("\nSearching vector DB...")
 
     # -----------------------------
-    # STEP 1: VECTOR SEARCH
+    # RETRIEVAL
     # -----------------------------
-    docs = db.similarity_search(
-        query_text,
-        k=k
-    )
+    docs = db.similarity_search(query_text, k=k)
 
     if not docs:
         print("No documents found.")
@@ -96,14 +122,11 @@ def query_rag(query_text: str, k: int = 10):
     print(f"Retrieved {len(docs)} candidate chunks.")
 
     # -----------------------------
-    # STEP 2: MULTILINGUAL RERANK
+    # RERANKING
     # -----------------------------
     print("\nReranking results...")
 
-    pairs = [
-        [query_text, d.page_content[:1000]]
-        for d in docs
-    ]
+    pairs = [(query_text, d.page_content[:1000]) for d in docs]
 
     scores = reranker.compute_score(pairs)
 
@@ -113,20 +136,15 @@ def query_rag(query_text: str, k: int = 10):
         reverse=True
     )
 
-    # -----------------------------
-    # TAKE TOP 5
-    # -----------------------------
     top_docs = [d for _, d in reranked[:5]]
 
     # -----------------------------
-    # DEBUG
+    # DEBUG OUTPUT
     # -----------------------------
-    print("\n===== TOP 5 RERANKED CHUNKS =====")
-
+    print("\n===== TOP CHUNKS =====")
     for i, d in enumerate(top_docs):
-        print(f"\n[{i}]")
-        print("ID:", d.metadata.get("id"))
-        print(d.page_content[:400])
+        print(f"\n[{i}] ID: {d.metadata.get('id')}")
+        print(d.page_content[:300])
 
     # -----------------------------
     # CONTEXT BUILD
@@ -139,14 +157,10 @@ def query_rag(query_text: str, k: int = 10):
     # -----------------------------
     # PROMPT BUILD
     # -----------------------------
-    prompt = ChatPromptTemplate.from_template(
-        PROMPT_TEMPLATE
-    ).format(
+    prompt = ChatPromptTemplate.from_template(PROMPT_TEMPLATE).format(
         question=query_text,
         context=context
     )
-
-    print("\nSending to LLM...")
 
     # -----------------------------
     # LLM
@@ -154,13 +168,17 @@ def query_rag(query_text: str, k: int = 10):
     model = OllamaLLM(
         model="mistral",
         temperature=0.0,
-        num_predict=256
+        num_predict=150
     )
 
-    try:
-        answer = model.invoke(prompt)
-    except Exception as e:
-        answer = f"LLM ERROR: {e}"
+    print("\nSending to LLM...\n")
+
+    answer = model.invoke(prompt)
+
+    # -----------------------------
+    # ✅ APPLY NORMALIZATION (ONLY ADDITION)
+    # -----------------------------
+    answer = normalize_bs_date(answer)
 
     # -----------------------------
     # OUTPUT
@@ -169,12 +187,8 @@ def query_rag(query_text: str, k: int = 10):
     print(answer)
 
     print("\n================ SOURCES ================\n")
-
     for d in top_docs:
-        print(
-            f"{d.metadata.get('source_type', 'unknown')} "
-            f"| {d.metadata.get('id')}"
-        )
+        print(f"{d.metadata.get('source_type','txt')} | {d.metadata.get('id')}")
 
     return answer
 
