@@ -14,7 +14,7 @@ from langchain_chroma import Chroma
 from generate_embeddings import get_embeddings
 
 
-# ---------------- PATHS ----------------
+#PATHS 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "Data"))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
@@ -23,14 +23,14 @@ print("CHROMA PATH:", CHROMA_PATH)
 print("DATA PATH:", DATA_PATH)
 
 
-# ---------------- CLEAN ----------------
+#CLEAN 
 def clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
-# ---------------- LOAD TXT FILES ----------------
+# LOAD TXT FILES 
 def load_txt_files() -> List[Document]:
     loader = DirectoryLoader(
         DATA_PATH,
@@ -47,7 +47,7 @@ def load_txt_files() -> List[Document]:
     return docs
 
 
-# ---------------- STRUCTURE SPLIT (IMPORTANT FOR NEPALI LAW) ----------------
+# STRUCTURE SPLIT (IMPORTANT FOR NEPALI LAW) 
 def preprocess_documents(docs: List[Document]) -> List[Document]:
     processed = []
 
@@ -74,7 +74,7 @@ def preprocess_documents(docs: List[Document]) -> List[Document]:
     return processed
 
 
-# ---------------- CHUNKING ----------------
+#CHUNKING
 def split_documents(docs: List[Document]) -> List[Document]:
     chunks = []
 
@@ -129,8 +129,9 @@ def split_documents(docs: List[Document]) -> List[Document]:
 
     print("Final chunks:", len(chunks))
     return chunks
+    
 
-# ---------------- VECTOR STORE ----------------
+# VECTOR STORE 
 def add_to_vectorstore(chunks: List[Document]):
     db = Chroma(
         persist_directory=CHROMA_PATH,
