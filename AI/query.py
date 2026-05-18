@@ -8,6 +8,8 @@ from langchain_ollama import OllamaLLM
 from FlagEmbedding import FlagReranker
 
 from generate_embeddings import get_embeddings
+from hybrid_retrieval import HybridRetriever
+from query_rewriting import QueryRewriter
 
 
 
@@ -83,35 +85,92 @@ def detect_mode(query: str) -> str:
 
 
 # PROMPTS
-FACT_PROMPT = """Extract the exact answer from the context below.
+FACT_PROMPT = """ROLE: Legal fact extractor for Nepal Company Act 2063.
 
-Example:
+MANDATORY CONSTRAINTS:
+1. Extract ONLY facts explicitly stated in the provided context
+2. If the answer is NOT found in context, respond: "Not found in provided context"
+3. Do NOT infer, interpret, or apply external legal knowledge
+4. Do NOT paraphrase—use exact quotes from context
+5. Do NOT expand or generalize beyond what is stated
+6. Every factual claim must be traceable to the context
+
+POSITIVE EXAMPLES (Correct Grounding):
 Question: What is the name of this Act?
 Context: यस ऐनको नाम "कम्पनी ऐन, २०६३" रहेको छ।
-Answer: "कम्पनी ऐन, २०६३" — the name of this Act is Company Act, 2063.
+Answer: [Direct quote: "यस ऐनको नाम 'कम्पनी ऐन, २०६३' रहेको छ।"] The Act is named Company Act, 2063.
 
-Example:
 Question: What is the minimum number of founders for a Public Company?
 Context: पब्लिक कम्पनीको संस्थापनाको लागि कम्तीमा सातजना संस्थापक हुनु पर्नेछ।
-Answer: कम्तीमा सातजना — at least 7 founders are required.
+Answer: [Direct quote: "कम्तीमा सातजना संस्थापक हुनु पर्नेछ।"] At least 7 founders are required.
 
-Example:
-Question: What is the maximum number of shareholders in a Private Company?
-Context: प्राइभेट कम्पनीको शेयरधनीहरुको सङ्ख्या एकसय एकभन्दा बढी हुन हुँदैन।
-Answer: एकसय एकभन्दा बढी हुन हुँदैन — a Private Company cannot have more than 101 shareholders.
+NEGATIVE EXAMPLES (Do NOT Do These):
+Question: What qualifications must a founder have?
+Context: पब्लिक कम्पनीको संस्थापनाको लागि कम्तीमा सातजना संस्थापक हुनु पर्नेछ।
+WRONG: "Founders should be experienced professionals." (Not in context)
+CORRECT: "Not found in provided context" (qualifications not mentioned)
 
-Now answer this:
+Question: How does Nepal Company Act compare to Indian Companies Act?
+Context: कम्पनी ऐन, २०६३...
+WRONG: "It is similar to Indian law..." (external knowledge)
+CORRECT: "Not found in provided context" (comparison not in context)
+
+GROUNDING PROCESS:
+1. Read the question carefully
+2. Search context for exact answer
+3. If found: Quote the relevant text [in brackets], then provide the answer
+4. If not found: Respond with "Not found in provided context"
+5. Verify: Did I only use context? Did I avoid interpretation?
+
 Question: {question}
+
 Context: {context}
-Answer (quote the Nepali text first, then translate only the key fact):"""
+
+Answer (show source text in [brackets], then the fact):"""
 
 
 
 
-EXPLANATION_PROMPT = """You are a legal assistant for Nepal Company Act 2063.
-Answer the question using ONLY the text provided in the context chunks below.
-Do not use any outside knowledge. Do not summarize general legal concepts.
-If the answer is not in the context, say: "The provided context does not contain enough information to answer this question."
+EXPLANATION_PROMPT = """ROLE: Legal explanation assistant for Nepal Company Act 2063.
+Extract ONLY from provided context. Zero external knowledge. Zero interpretation.
+
+MANDATORY CONSTRAINTS:
+1. Every claim MUST be explicitly stated in the provided context
+2. Do NOT infer relationships between sections
+3. Do NOT apply general legal knowledge
+4. Do NOT paraphrase—quote and cite exact text
+5. Do NOT interpret vague language
+6. If insufficient context, respond: "Not found in provided context"
+
+POSITIVE EXAMPLES (Correct Grounding):
+Question: What are the duties of directors?
+Context: [Chunk 1] संचालकहरूको कर्तव्य... क. कंपनीको लाभको लागि काम गर्नु पर्नेछ। ख. शेयरधनीको हितको रक्षा गर्नु पर्नेछ।
+CORRECT ANSWER:
+1. [From context: "कंपनीको लाभको लागि काम गर्नु पर्नेछ।"] Directors must work for company profit.
+2. [From context: "शेयरधनीको हितको रक्षा गर्नु पर्नेछ।"] Directors must protect shareholder interests.
+
+Question: How is a company dissolved?
+Context: [Chunk 1] कंपनीको विघटन... कंपनीको बोर्डले विघटनको निर्णय गर्नुपर्छ।
+CORRECT ANSWER:
+1. [From context: "कंपनीको बोर्डले विघटनको निर्णय गर्नुपर्छ।"] The company board must decide on dissolution.
+
+NEGATIVE EXAMPLES (Do NOT Do These):
+Question: What happens to employee benefits after dissolution?
+Context: कंपनीको विघटन प्रक्रिया...
+WRONG: "Employees typically receive severance packages." (Not in context, external knowledge)
+CORRECT: "Not found in provided context" (employee benefits not mentioned)
+
+Question: What is the relationship between the board and shareholders?
+Context: [Only says: "Board meets quarterly. Shareholders meet annually."]
+WRONG: "The board reports to shareholders." (Inference, not stated)
+CORRECT: "Board meets quarterly. Shareholders meet annually." (Only state what's explicit)
+
+GROUNDING INSTRUCTIONS:
+For each point in your answer:
+a. Show the exact quote from context in [brackets]
+b. Extract the fact directly—do not interpret
+c. Do not combine quotes to infer new meaning
+d. Stop if you cannot ground the answer
 
 QUESTION: {question}
 
@@ -119,11 +178,11 @@ CONTEXT:
 {context}
 
 INSTRUCTIONS:
-- Read each chunk carefully.
-- Extract only what is relevant to the question.
-- Use numbered points.
-- After each point, cite the chunk it came from in parentheses.
-- Do not add anything not present in the context.
+- Use numbered points
+- Cite source chunk for each claim [in brackets]
+- Quote exact text from context
+- Do NOT add interpretation or connections
+- If information is missing, stop and respond: "Not found in provided context"
 
 ANSWER:"""
 
@@ -139,6 +198,14 @@ db = Chroma(
 print("TOTAL CHUNKS:", len(db.get()["ids"]))
 
 
+# HYBRID RETRIEVER & QUERY REWRITER
+print("Initializing hybrid retriever...")
+hybrid_retriever = HybridRetriever(db)
+
+print("Initializing query rewriter...")
+query_rewriter = QueryRewriter()
+
+
 
 # QUERY FUNCTION
 def query_rag(query_text: str, k: int = 10):
@@ -148,57 +215,75 @@ def query_rag(query_text: str, k: int = 10):
 
     print(f"\nMode detected: {mode.upper()}")
 
-    
-    # RETRIEVAL
-    print("Searching vector DB...")
-    docs = db.similarity_search(query_text, k=k)
 
-    if not docs:
+    # QUERY REWRITING
+    print("Rewriting query for better retrieval...")
+    rewritten_query, rewrite_note = query_rewriter.rewrite_with_explanation(query_text, mode)
+    print(f"Original: {query_text}")
+    print(f"Rewritten: {rewritten_query}")
+    print(f"Note: {rewrite_note}")
+
+
+    # HYBRID RETRIEVAL
+    print("Searching with hybrid retrieval (vector + BM25)...")
+    hybrid_results = hybrid_retriever.retrieve(rewritten_query, k=k)
+
+    if not hybrid_results:
         print("No documents found.")
         return
 
+    docs = [doc for _, doc in hybrid_results]
     print(f"Retrieved {len(docs)} candidate chunks.")
 
-    
-    # RERANKING
+
+    # RERANKING (NO TRUNCATION)
     print("Reranking results...")
-    pairs = [(query_text, d.page_content[:1000]) for d in docs]
+    pairs = [(rewritten_query, d.page_content) for d in docs]
     scores = reranker.compute_score(pairs)
     reranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
 
-    
+
+    # CONFIDENCE-BASED FILTERING
+    print("Applying confidence filtering...")
+    confidence_threshold = -0.5 if mode == "fact" else -1.0
+
+    filtered = [(score, doc) for score, doc in reranked if score > confidence_threshold]
+
+    if not filtered:
+        print(f"No chunks above threshold {confidence_threshold}, using best available")
+        filtered = reranked[:1]
+    else:
+        num_filtered_out = len(reranked) - len(filtered)
+        if num_filtered_out > 0:
+            print(f"Filtered out {num_filtered_out} low-confidence chunks (score ≤ {confidence_threshold})")
+
+
     # CHUNK SELECTION
     if mode == "fact":
-        top_score = reranked[0][0]
-        second_score = reranked[1][0] if len(reranked) > 1 else -999
+        top_score = filtered[0][0]
+        second_score = filtered[1][0] if len(filtered) > 1 else -999
         gap = top_score - second_score
 
         if gap > 2.0:
-            top_docs = [reranked[0][1]]
+            top_docs = [filtered[0][1]]
             print(f"High confidence — using TOP 1 chunk (reranker gap: {gap:.2f})")
         else:
-            top_docs = [d for _, d in reranked[:2]]
+            top_docs = [d for _, d in filtered[:2]]
             print(f"Low confidence — using TOP 2 chunks (reranker gap: {gap:.2f})")
     else:
-    # Explanation mode — use top 4 but drop chunks scoring below -1.0
-    # They are noise and confuse the model
-        top_docs = [
-        d for score, d in reranked[:4]
-        if score > -1.0
-    ]
-        print(f"Explanation mode — using {len(top_docs)} chunks (filtered noise below -1.0)")
+        top_docs = [d for _, d in filtered[:4]]
+        print(f"Explanation mode — using {len(top_docs)} high-confidence chunks")
 
-    
 
     # DEBUG OUTPUT
     print(f"\n===== TOP CHUNKS (mode={mode.upper()}) =====")
-    for i, (score, d) in enumerate(reranked[:len(top_docs)]):
+    for i, (score, d) in enumerate(filtered[:len(top_docs)]):
         print(f"\n[{i}] Score: {score:.4f} | ID: {d.metadata.get('id')}")
         print(d.page_content[:300])
         print("...")
 
 
-    
+
     # CONTEXT BUILD
     context = "\n\n---\n\n".join(
         f"[Chunk {i+1}]\n{d.page_content}"
@@ -206,7 +291,7 @@ def query_rag(query_text: str, k: int = 10):
     )
 
 
-    
+
     # PROMPT + LLM CONFIG
     if mode == "fact":
         prompt_template = FACT_PROMPT
@@ -230,11 +315,11 @@ def query_rag(query_text: str, k: int = 10):
     answer = model.invoke(prompt)
 
 
-    
+
     # DATE NORMALIZATION
     answer = normalize_bs_date(answer)
 
-    
+
     # OUTPUT
     print("\n================ ANSWER ================\n")
     print(answer)
@@ -245,6 +330,7 @@ def query_rag(query_text: str, k: int = 10):
         print(f"{d.metadata.get('source_type', 'txt')} | {d.metadata.get('id')}")
 
     return answer
+
 
 
 
