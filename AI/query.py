@@ -283,10 +283,15 @@ def query_rag(query_text: str, k: int = 10):
     scores = reranker.compute_score(pairs)
     reranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
 
-
-    # CONFIDENCE-BASED FILTERING
+# CONFIDENCE-BASED FILTERING
     print("Applying confidence filtering...")
-    confidence_threshold = -0.5 if mode == "fact" else -1.0
+
+    if mode == "fact":
+        confidence_threshold = -0.5
+        max_chunks = 2
+    else:
+        confidence_threshold = -3.0
+        max_chunks = 5
 
     filtered = [(score, doc) for score, doc in reranked if score > confidence_threshold]
 
@@ -298,7 +303,6 @@ def query_rag(query_text: str, k: int = 10):
         if num_filtered_out > 0:
             print(f"Filtered out {num_filtered_out} low-confidence chunks (score ≤ {confidence_threshold})")
 
-
     # CHUNK SELECTION
     if mode == "fact":
         top_score = filtered[0][0]
@@ -309,11 +313,12 @@ def query_rag(query_text: str, k: int = 10):
             top_docs = [filtered[0][1]]
             print(f"High confidence — using TOP 1 chunk (reranker gap: {gap:.2f})")
         else:
-            top_docs = [d for _, d in filtered[:2]]
-            print(f"Low confidence — using TOP 2 chunks (reranker gap: {gap:.2f})")
+            top_docs = [d for _, d in filtered[:max_chunks]]
+            print(f"Low confidence — using TOP {len(top_docs)} chunks (reranker gap: {gap:.2f})")
     else:
-        top_docs = [d for _, d in filtered[:4]]
-        print(f"Explanation mode — using {len(top_docs)} high-confidence chunks")
+        top_docs = [d for _, d in filtered[:max_chunks]]
+        print(f"Explanation mode — using {len(top_docs)} chunks (threshold: {confidence_threshold})")
+
 
 
     # DEBUG OUTPUT
@@ -336,10 +341,8 @@ def query_rag(query_text: str, k: int = 10):
     # PROMPT + LLM CONFIG
     if mode == "fact":
         prompt_template = FACT_PROMPT
-        num_predict = 120
     else:
         prompt_template = EXPLANATION_PROMPT
-        num_predict = 500
 
     prompt = ChatPromptTemplate.from_template(prompt_template).format(
         question=query_text,
@@ -349,7 +352,8 @@ def query_rag(query_text: str, k: int = 10):
     model = OllamaLLM(
         model="qwen2.5:7b",
         temperature=0.0,
-        num_predict=num_predict,
+        num_ctx=4096,
+        repeat_penalty=1.1,
     )
 
     print("\nSending to LLM...\n")
