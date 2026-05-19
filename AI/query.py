@@ -65,21 +65,61 @@ def normalize_bs_date(text: str) -> str:
 
 
 # MODE DETECTION
-EXPLANATION_TRIGGERS = [
-    "explain", "how does", "how do", "what is the process",
-    "what are the rules", "describe", "walk me through",
-    "what happens when", "what are the grounds", "how is it",
-    "what are the conditions", "what are the steps",
-    "what are the duties", "what are the rights",
-    "what are the requirements", "how can", "under what"
-]
+CLASSIFIER_PROMPT = """Classify this question into one of two categories:
+
+FACT — if the question asks for:
+- A single specific value (number, date, name, yes/no)
+- A threshold or limit (minimum, maximum, how many, how much)
+- A direct definition ("what is X defined as")
+
+EXPLANATION — if the question asks for:
+- A process or procedure (how does X work, what are the steps)
+- Multiple conditions or qualifications (who is eligible, what are the requirements)
+- Reasons or grounds (what are the grounds for X)
+- Duties, rights, or responsibilities
+- Anything that requires combining information from multiple places
+
+Examples:
+Q: When did the Company Act come into force? → FACT
+Q: How many founders are required? → FACT
+Q: What is the definition of a Listed Company? → FACT
+Q: Can a director be a Company Secretary? → FACT
+Q: What are the grounds for refusing company registration? → EXPLANATION
+Q: What is the process for establishing a company? → EXPLANATION
+Q: What are the qualifications for a Company Secretary? → EXPLANATION
+Q: What is the minimum experience required for a Company Secretary? → EXPLANATION
+Q: Explain how dividend distribution works. → EXPLANATION
+Q: कम्पनी दर्ता गर्न इन्कार गर्न के के आधारहरू छन्? → EXPLANATION
+Q: कम्पनी ऐन २०६३ कहिले लागू भयो? → FACT
+Q: कम्पनी सचिवको योग्यता के हो? → EXPLANATION
+
+Question: {question}
+Category (reply with FACT or EXPLANATION only):"""
+
+classifier_llm = OllamaLLM(
+    model="qwen2.5:7b",
+    temperature=0.0,
+    num_predict=5,
+)
+
 
 def detect_mode(query: str) -> str:
-    q = query.lower()
-    for trigger in EXPLANATION_TRIGGERS:
-        if trigger in q:
+    try:
+        response = classifier_llm.invoke(CLASSIFIER_PROMPT.format(question=query))
+        result = str(response).strip().upper()
+
+        if "EXPLANATION" in result:
+            print(f"Classifier result: {result} -> explanation")
             return "explanation"
-    return "fact"
+        if "FACT" in result:
+            print(f"Classifier result: {result} -> fact")
+            return "fact"
+
+        print(f"Warning: unexpected classifier result '{result}', defaulting to explanation")
+        return "explanation"
+    except Exception as error:
+        print(f"Warning: mode classifier failed ({error}), defaulting to explanation")
+        return "explanation"
 
 
 
@@ -216,9 +256,10 @@ def query_rag(query_text: str, k: int = 10):
     print(f"\nMode detected: {mode.upper()}")
 
 
-    # QUERY REWRITING
-    print("Rewriting query for better retrieval...")
-    rewritten_query, rewrite_note = query_rewriter.rewrite_with_explanation(query_text, mode)
+    # QUERY REWRITING (temporarily disabled)
+    print("Query rewriter disabled — using original query")
+    rewritten_query = query_text
+    rewrite_note = "rewriter disabled"
     print(f"Original: {query_text}")
     print(f"Rewritten: {rewritten_query}")
     print(f"Note: {rewrite_note}")
@@ -298,7 +339,7 @@ def query_rag(query_text: str, k: int = 10):
         num_predict = 120
     else:
         prompt_template = EXPLANATION_PROMPT
-        num_predict = 280
+        num_predict = 500
 
     prompt = ChatPromptTemplate.from_template(prompt_template).format(
         question=query_text,
@@ -306,7 +347,7 @@ def query_rag(query_text: str, k: int = 10):
     )
 
     model = OllamaLLM(
-        model="mistral",
+        model="qwen2.5:7b",
         temperature=0.0,
         num_predict=num_predict,
     )

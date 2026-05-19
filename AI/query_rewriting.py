@@ -32,7 +32,7 @@ Output ONLY the rewritten query, nothing else:"""
 
 
 class QueryRewriter:
-    def __init__(self, model_name: str = "mistral"):
+    def __init__(self, model_name: str = "qwen2.5:7b"):
         self.model = OllamaLLM(
             model=model_name,
             temperature=0.3,
