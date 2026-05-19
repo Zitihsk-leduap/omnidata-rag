@@ -283,47 +283,36 @@ def query_rag(query_text: str, k: int = 10):
     scores = reranker.compute_score(pairs)
     reranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
 
-# CONFIDENCE-BASED FILTERING
-    print("Applying confidence filtering...")
+# CHUNK SELECTION (relative relevance - production approach)
+    print("Selecting chunks by relative relevance...")
 
     if mode == "fact":
-        confidence_threshold = -0.5
-        max_chunks = 2
-    else:
-        confidence_threshold = -3.0
-        max_chunks = 5
-
-    filtered = [(score, doc) for score, doc in reranked if score > confidence_threshold]
-
-    if not filtered:
-        print(f"No chunks above threshold {confidence_threshold}, using best available")
-        filtered = reranked[:1]
-    else:
-        num_filtered_out = len(reranked) - len(filtered)
-        if num_filtered_out > 0:
-            print(f"Filtered out {num_filtered_out} low-confidence chunks (score ≤ {confidence_threshold})")
-
-    # CHUNK SELECTION
-    if mode == "fact":
-        top_score = filtered[0][0]
-        second_score = filtered[1][0] if len(filtered) > 1 else -999
+        # For facts: top 1-2 based on gap
+        top_score = reranked[0][0]
+        second_score = reranked[1][0] if len(reranked) > 1 else -999
         gap = top_score - second_score
 
         if gap > 2.0:
-            top_docs = [filtered[0][1]]
-            print(f"High confidence — using TOP 1 chunk (reranker gap: {gap:.2f})")
+            top_docs = [reranked[0][1]]
+            print(f"High confidence — using TOP 1 chunk (gap: {gap:.2f})")
         else:
-            top_docs = [d for _, d in filtered[:max_chunks]]
-            print(f"Low confidence — using TOP {len(top_docs)} chunks (reranker gap: {gap:.2f})")
+            top_docs = [d for _, d in reranked[:2]]
+            print(f"Moderate confidence — using TOP 2 chunks (gap: {gap:.2f})")
     else:
-        top_docs = [d for _, d in filtered[:max_chunks]]
-        print(f"Explanation mode — using {len(top_docs)} chunks (threshold: {confidence_threshold})")
+        # For explanations: include chunks within 5 points of best score
+        top_score = reranked[0][0]
+        relevance_threshold = top_score - 5.0
+        
+        top_docs = [d for score, d in reranked if score > relevance_threshold]
+        top_docs = top_docs[:5]  # Cap at 5 to avoid over-context
+        
+        print(f"Explanation mode — using TOP {len(top_docs)} highly relevant chunks (within 5 pts of best)")
 
 
 
     # DEBUG OUTPUT
     print(f"\n===== TOP CHUNKS (mode={mode.upper()}) =====")
-    for i, (score, d) in enumerate(filtered[:len(top_docs)]):
+    for i, (score, d) in enumerate(reranked[:len(top_docs)]):
         print(f"\n[{i}] Score: {score:.4f} | ID: {d.metadata.get('id')}")
         print(d.page_content[:300])
         print("...")
