@@ -162,32 +162,16 @@ MANDATORY CONSTRAINTS:
 5. Do NOT expand or generalize beyond what is stated
 6. Every factual claim must be traceable to the context
 
-POSITIVE EXAMPLES (Correct Grounding):
-Question: What is the name of this Act?
-Context: यस ऐनको नाम "कम्पनी ऐन, २०६३" रहेको छ।
-Answer: [Direct quote: "यस ऐनको नाम 'कम्पनी ऐन, २०६३' रहेको छ।"] The Act is named Company Act, 2063.
-
-Question: What is the minimum number of founders for a Public Company?
-Context: पब्लिक कम्पनीको संस्थापनाको लागि कम्तीमा सातजना संस्थापक हुनु पर्नेछ।
-Answer: [Direct quote: "कम्तीमा सातजना संस्थापक हुनु पर्नेछ।"] At least 7 founders are required.
-
-NEGATIVE EXAMPLES (Do NOT Do These):
-Question: What qualifications must a founder have?
-Context: पब्लिक कम्पनीको संस्थापनाको लागि कम्तीमा सातजना संस्थापक हुनु पर्नेछ।
-WRONG: "Founders should be experienced professionals." (Not in context)
-CORRECT: "Not found in provided context" (qualifications not mentioned)
-
-Question: How does Nepal Company Act compare to Indian Companies Act?
-Context: कम्पनी ऐन, २०६३...
-WRONG: "It is similar to Indian law..." (external knowledge)
-CORRECT: "Not found in provided context" (comparison not in context)
-
-GROUNDING PROCESS:
-1. Read the question carefully
-2. Search context for exact answer
-3. If found: Quote the relevant text [in brackets], then provide the answer
-4. If not found: Respond with "Not found in provided context"
-5. Verify: Did I only use context? Did I avoid interpretation?
+ANSWER APPROACH:
+Use the context to give a clear, direct answer in plain language.
+- For definitions: explain what the term means and its key characteristics
+- For facts: state the fact directly with the specific value
+- For processes: explain step by step in logical order
+- For conditions: list each condition clearly
+- Always cite the दफा (section number) at the end
+- Answer only from the provided context
+- Do not use legal quote style like "X भन्नाले Y सम्झनु पर्छ"
+  Instead say "X is Y" or "X means Y"
 
 Question: {question}
 
@@ -209,47 +193,21 @@ MANDATORY CONSTRAINTS:
 5. Do NOT interpret vague language
 6. If insufficient context, respond: "Not found in provided context"
 
-POSITIVE EXAMPLES (Correct Grounding):
-Question: What are the duties of directors?
-Context: [Chunk 1] संचालकहरूको कर्तव्य... क. कंपनीको लाभको लागि काम गर्नु पर्नेछ। ख. शेयरधनीको हितको रक्षा गर्नु पर्नेछ।
-CORRECT ANSWER:
-1. [From context: "कंपनीको लाभको लागि काम गर्नु पर्नेछ।"] Directors must work for company profit.
-2. [From context: "शेयरधनीको हितको रक्षा गर्नु पर्नेछ।"] Directors must protect shareholder interests.
-
-Question: How is a company dissolved?
-Context: [Chunk 1] कंपनीको विघटन... कंपनीको बोर्डले विघटनको निर्णय गर्नुपर्छ।
-CORRECT ANSWER:
-1. [From context: "कंपनीको बोर्डले विघटनको निर्णय गर्नुपर्छ।"] The company board must decide on dissolution.
-
-NEGATIVE EXAMPLES (Do NOT Do These):
-Question: What happens to employee benefits after dissolution?
-Context: कंपनीको विघटन प्रक्रिया...
-WRONG: "Employees typically receive severance packages." (Not in context, external knowledge)
-CORRECT: "Not found in provided context" (employee benefits not mentioned)
-
-Question: What is the relationship between the board and shareholders?
-Context: [Only says: "Board meets quarterly. Shareholders meet annually."]
-WRONG: "The board reports to shareholders." (Inference, not stated)
-CORRECT: "Board meets quarterly. Shareholders meet annually." (Only state what's explicit)
-
-GROUNDING INSTRUCTIONS:
-For each point in your answer:
-a. Show the exact quote from context in [brackets]
-b. Extract the fact directly—do not interpret
-c. Do not combine quotes to infer new meaning
-d. Stop if you cannot ground the answer
+ANSWER APPROACH:
+Use the context to give a clear, direct answer in plain language.
+- For definitions: explain what the term means and its key characteristics
+- For facts: state the fact directly with the specific value
+- For processes: explain step by step in logical order
+- For conditions: list each condition clearly
+- Always cite the दफा (section number) at the end
+- Answer only from the provided context
+- Do not use legal quote style like "X भन्नाले Y सम्झनु पर्छ"
+  Instead say "X is Y" or "X means Y"
 
 QUESTION: {question}
 
 CONTEXT:
 {context}
-
-INSTRUCTIONS:
-- Use numbered points
-- Cite source chunk for each claim [in brackets]
-- Quote exact text from context
-- Do NOT add interpretation or connections
-- If information is missing, stop and respond: "Not found in provided context"
 
 {language_instruction}
 
