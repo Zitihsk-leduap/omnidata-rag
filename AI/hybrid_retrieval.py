@@ -10,8 +10,8 @@ class HybridRetriever:
         self.chunks = []
         self.parents = {}  # parent_id -> parent Document
         self.children_by_parent = {}  # parent_id -> [child Documents]
-        self.build_index()
 
+        self.build_index()
     def build_index(self):
         all_docs = self.db.get()
         doc_ids = all_docs.get("ids", [])
@@ -106,16 +106,22 @@ class HybridRetriever:
         result = []
         for idx, score in top_indices:
             chunk = self.chunks[idx]
-            
-            # CONTEXTUAL EXPANSION: If this is a child, fetch its parent
+
+            # PRODUCTION FIX: Include parent context directly in content (not just metadata)
             if chunk.metadata.get("type") == "child":
                 parent_id = chunk.metadata.get("parent_id")
                 if parent_id in self.parents:
                     parent = self.parents[parent_id]
-                    # Append parent context to child's page_content
+                    parent_context_section = f"\n\n[Parent Context]\n{parent.page_content}\n[End Parent Context]"
+                    # Store original for reference
+                    chunk.metadata["_original_content"] = chunk.page_content
+                    chunk.metadata["_has_parent"] = True
+                    # Update page_content with parent included
+                    chunk.page_content = chunk.page_content + parent_context_section
+                    # Keep metadata for traceability
                     chunk.metadata["parent_context"] = parent.page_content
                     chunk.metadata["parent_title"] = parent.metadata.get("title", "")
-            
+
             result.append((score, chunk))
 
         return result
