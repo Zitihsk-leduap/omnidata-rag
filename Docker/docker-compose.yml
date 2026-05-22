@@ -1,22 +1,49 @@
-version: "3.9"
-
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
+  # Backend (FastAPI Server)
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile.backend
+    container_name: rag-backend
     ports:
-      - "11434:11434"
-
-    volumes:
-      - ollama_data:/root/.ollama
-    
-    command : >
-      sh -c "
-        ollama pull nomic-embed-text &&
-        ollama pull smollm2 &&
-        ollama serve
-        "
+      - "8080:8080"
+    env_file: ../.env
+    environment:
+      - BACKEND_URL=http://0.0.0.0:8080
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    networks:
+      - rag-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - ../AI:/app/AI
+      - ../backend:/app/backend
 
-volumes:
-  ollama_data:
+  # Frontend (Streamlit App)
+  frontend:
+    build:
+      context: ..
+      dockerfile: Dockerfile.frontend
+    container_name: rag-frontend
+    ports:
+      - "8501:8501"
+    env_file: ../.env
+    environment:
+      - BACKEND_URL=http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - rag-network
+    restart: unless-stopped
+    volumes:
+      - ../frontend:/app/frontend
+
+networks:
+  rag-network:
+    driver: bridge
