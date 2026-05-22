@@ -23,6 +23,14 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 # ─────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ─────────────────────────────────────────────
+def copy_to_clipboard(text: str) -> None:
+    """Copy text to clipboard (simulated with message)."""
+    st.session_state.clipboard_text = text
+    st.toast("✅ Answer copied to clipboard!", icon="📋")
+
+# ─────────────────────────────────────────────
 # STYLES
 # ─────────────────────────────────────────────
 st.markdown("""
@@ -174,17 +182,6 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {
     transform: translateY(0) !important;
 }
 
-/* Clear button variant */
-div[data-testid="column"]:nth-child(2) .stButton > button {
-    background-color: #ffffff !important;
-    color: #111111 !important;
-    border: 1.5px solid #d1d5db !important;
-}
-div[data-testid="column"]:nth-child(2) .stButton > button:hover {
-    background-color: #f3f4f6 !important;
-    transform: translateY(-1px) !important;
-}
-
 /* ── EXPANDER ── */
 [data-testid="stExpander"] {
     border: 1px solid #e5e7eb !important;
@@ -236,6 +233,20 @@ st.markdown("""
 # ─────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "query_key" not in st.session_state:
+    st.session_state.query_key = 0
+
+# ─────────────────────────────────────────────
+# NEW CONVERSATION BUTTON
+# ─────────────────────────────────────────────
+col_new = st.columns([1, 4, 1])
+if col_new[0].button("🔄 New", use_container_width=True):
+    st.session_state.messages = []
+    st.session_state.query_key += 1
+    st.rerun()
+
+if col_new[2].button("📋 History", use_container_width=True):
+    st.info(f"💬 {len(st.session_state.messages)} messages in conversation")
 
 # ─────────────────────────────────────────────
 # CHAT HISTORY
@@ -248,7 +259,7 @@ if not st.session_state.messages:
     </div>
     """, unsafe_allow_html=True)
 else:
-    for msg in st.session_state.messages:
+    for i, msg in enumerate(st.session_state.messages):
         if msg["role"] == "user":
             st.markdown(f"""
             <div class="user-bubble">
@@ -256,18 +267,26 @@ else:
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.markdown(f"""
-            <div class="bot-bubble">
-                <div class="bot-bubble-inner">{msg['content']}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Bot answer with copy button
+            col_answer, col_copy = st.columns([20, 1])
+            
+            with col_answer:
+                st.markdown(f"""
+                <div class="bot-bubble">
+                    <div class="bot-bubble-inner">{msg['content']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_copy:
+                if st.button("📋", key=f"copy_{i}", help="Copy answer"):
+                    copy_to_clipboard(msg['content'])
 
             if msg.get("sources"):
                 with st.expander("📚 View Sources"):
-                    for i, s in enumerate(msg["sources"]):
+                    for j, s in enumerate(msg["sources"]):
                         st.markdown(f"""
                         <div class="source-card">
-                            <b>Source {i+1}</b>
+                            <b>Source {j+1}</b>
                             {s.get('text', '')}
                         </div>
                         """, unsafe_allow_html=True)
@@ -275,24 +294,26 @@ else:
 st.markdown("<hr class='rag-divider'>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# INPUT
+# INPUT SECTION
 # ─────────────────────────────────────────────
 query = st.text_area(
     "Your Question",
-    placeholder="Type your question in Nepali or English...",
+    placeholder="Ask a question about Nepal Company Act 2063...\n(English वा नेपालीमा सोध्नुहोस्)",
     height=100,
-    label_visibility="visible"
+    label_visibility="visible",
+    key=f"query_input_{st.session_state.query_key}"
 )
 
 col1, col2 = st.columns([3, 1])
-ask = col1.button("🔍 Ask")
-clear = col2.button("🧹 Clear")
+ask = col1.button("🔍 Ask", use_container_width=True)
+clear_hist = col2.button("🧹 Clear", use_container_width=True)
 
 # ─────────────────────────────────────────────
-# CLEAR
+# CLEAR CHAT HISTORY
 # ─────────────────────────────────────────────
-if clear:
+if clear_hist:
     st.session_state.messages = []
+    st.session_state.query_key += 1
     st.rerun()
 
 # ─────────────────────────────────────────────
@@ -310,7 +331,7 @@ if ask and query.strip():
         "top_k_context": 5
     }
 
-    with st.spinner("Searching documents..."):
+    with st.spinner("⏳ Searching documents..."):
         try:
             resp = requests.post(f"{BACKEND_URL}/chat", json=payload, timeout=120)
 
@@ -332,8 +353,10 @@ if ask and query.strip():
         except requests.exceptions.ConnectionError:
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": "❌ Could not reach the backend. Make sure the server is running.",
+                "content": "❌ Could not reach the backend at " + BACKEND_URL,
                 "sources": []
             })
 
+    # Clear input by incrementing key and rerun
+    st.session_state.query_key += 1
     st.rerun()

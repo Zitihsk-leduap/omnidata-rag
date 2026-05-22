@@ -1,16 +1,33 @@
 import argparse
 import os
 import re
+import warnings
+
+# Suppress deprecation warning from google.generativeai
+warnings.filterwarnings("ignore", category=FutureWarning)
+import google.generativeai as genai
 
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import OllamaLLM
 from FlagEmbedding import FlagReranker
 
-from generate_embeddings import get_embeddings
-from hybrid_retrieval import HybridRetriever
-from query_rewriting import QueryRewriter
+from AI.generate_embeddings import get_embeddings
+from AI.hybrid_retrieval import HybridRetriever
+from AI.query_rewriting import QueryRewriter
 
+# Initialize Gemini API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY environment variable is not set")
+
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel(
+    model_name="gemini-2.5-flash",
+    generation_config=genai.types.GenerationConfig(
+        temperature=0.0,
+        max_output_tokens=5000,
+    ),
+)
 
 
 # PATHS
@@ -18,7 +35,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
 
 print("CHROMA PATH:", CHROMA_PATH)
-
 
 
 # RERANKER
@@ -29,15 +45,25 @@ print("Reranker loaded.")
 
 # DATE NORMALIZATION
 BS_MONTHS = {
-    "बैशाख": "01", "जेठ": "02", "असार": "03", "श्रावण": "04",
-    "भदौ": "05", "आश्विन": "06", "असोज": "06", "कार्तिक": "07",
-    "मंसिर": "08", "पौष": "09", "माघ": "10", "फाल्गुन": "11",
-    "चैत्र": "12"
+    "बैशाख": "01",
+    "जेठ": "02",
+    "असार": "03",
+    "श्रावण": "04",
+    "भदौ": "05",
+    "आश्विन": "06",
+    "असोज": "06",
+    "कार्तिक": "07",
+    "मंसिर": "08",
+    "पौष": "09",
+    "माघ": "10",
+    "फाल्गुन": "11",
+    "चैत्र": "12",
 }
 
 
 def normalize_bs_date(text: str) -> str:
     """Only normalize dates that appear outside of Nepali quoted text."""
+
     def repl(match):
         year = match.group(1)
         month = match.group(2)
@@ -49,19 +75,25 @@ def normalize_bs_date(text: str) -> str:
     if "—" in text:
         nepali_part, english_part = text.split("—", 1)
         english_part = re.sub(
-            r"(\d{4})\s*साल\s*([^\s]+)\s*(\d{1,2})\s*गते",
-            repl,
-            english_part
+            r"(\d{4})\s*साल\s*([^\s]+)\s*(\d{1,2})\s*गते", repl, english_part
         )
         return nepali_part + "—" + english_part
     else:
         # No dash separator, apply normally
-        return re.sub(
-            r"(\d{4})\s*साल\s*([^\s]+)\s*(\d{1,2})\s*गते",
-            repl,
-            text
-        )
+        return re.sub(r"(\d{4})\s*साल\s*([^\s]+)\s*(\d{1,2})\s*गते", repl, text)
 
+
+# LANGUAGE DETECTION
+def detect_language(text: str) -> str:
+    """Detect if query is Nepali or English."""
+    nepali_chars = len(re.findall(r'[\u0900-\u097F]', text))
+    total_chars = len(text.replace(" ", ""))
+    if total_chars == 0:
+        return "english"
+    nepali_ratio = nepali_chars / total_chars
+    if nepali_ratio > 0.3:
+        return "nepali"
+    return "english"
 
 
 # MODE DETECTION
@@ -96,17 +128,12 @@ Q: कम्पनी सचिवको योग्यता के हो? �
 Question: {question}
 Category (reply with FACT or EXPLANATION only):"""
 
-classifier_llm = OllamaLLM(
-    model="qwen2.5:7b",
-    temperature=0.0,
-    num_predict=5,
-)
-
 
 def detect_mode(query: str) -> str:
     try:
-        response = classifier_llm.invoke(CLASSIFIER_PROMPT.format(question=query))
-        result = str(response).strip().upper()
+        prompt = CLASSIFIER_PROMPT.format(question=query)
+        response = gemini_model.generate_content(prompt)
+        result = response.text.strip().upper()
 
         if "EXPLANATION" in result:
             print(f"Classifier result: {result} -> explanation")
@@ -115,13 +142,13 @@ def detect_mode(query: str) -> str:
             print(f"Classifier result: {result} -> fact")
             return "fact"
 
-        print(f"Warning: unexpected classifier result '{result}', defaulting to explanation")
+        print(
+            f"Warning: unexpected classifier result '{result}', defaulting to explanation"
+        )
         return "explanation"
     except Exception as error:
         print(f"Warning: mode classifier failed ({error}), defaulting to explanation")
         return "explanation"
-
-
 
 
 # PROMPTS
@@ -135,40 +162,24 @@ MANDATORY CONSTRAINTS:
 5. Do NOT expand or generalize beyond what is stated
 6. Every factual claim must be traceable to the context
 
-POSITIVE EXAMPLES (Correct Grounding):
-Question: What is the name of this Act?
-Context: यस ऐनको नाम "कम्पनी ऐन, २०६३" रहेको छ।
-Answer: [Direct quote: "यस ऐनको नाम 'कम्पनी ऐन, २०६३' रहेको छ।"] The Act is named Company Act, 2063.
-
-Question: What is the minimum number of founders for a Public Company?
-Context: पब्लिक कम्पनीको संस्थापनाको लागि कम्तीमा सातजना संस्थापक हुनु पर्नेछ।
-Answer: [Direct quote: "कम्तीमा सातजना संस्थापक हुनु पर्नेछ।"] At least 7 founders are required.
-
-NEGATIVE EXAMPLES (Do NOT Do These):
-Question: What qualifications must a founder have?
-Context: पब्लिक कम्पनीको संस्थापनाको लागि कम्तीमा सातजना संस्थापक हुनु पर्नेछ।
-WRONG: "Founders should be experienced professionals." (Not in context)
-CORRECT: "Not found in provided context" (qualifications not mentioned)
-
-Question: How does Nepal Company Act compare to Indian Companies Act?
-Context: कम्पनी ऐन, २०६३...
-WRONG: "It is similar to Indian law..." (external knowledge)
-CORRECT: "Not found in provided context" (comparison not in context)
-
-GROUNDING PROCESS:
-1. Read the question carefully
-2. Search context for exact answer
-3. If found: Quote the relevant text [in brackets], then provide the answer
-4. If not found: Respond with "Not found in provided context"
-5. Verify: Did I only use context? Did I avoid interpretation?
+ANSWER APPROACH:
+Use the context to give a clear, direct answer in plain language.
+- For definitions: explain what the term means and its key characteristics
+- For facts: state the fact directly with the specific value
+- For processes: explain step by step in logical order
+- For conditions: list each condition clearly
+- Always cite the दफा (section number) at the end
+- Answer only from the provided context
+- Do not use legal quote style like "X भन्नाले Y सम्झनु पर्छ"
+  Instead say "X is Y" or "X means Y"
 
 Question: {question}
 
 Context: {context}
 
-Answer (show source text in [brackets], then the fact):"""
+{language_instruction}
 
-
+Answer:"""
 
 
 EXPLANATION_PROMPT = """ROLE: Legal explanation assistant for Nepal Company Act 2063.
@@ -182,51 +193,25 @@ MANDATORY CONSTRAINTS:
 5. Do NOT interpret vague language
 6. If insufficient context, respond: "Not found in provided context"
 
-POSITIVE EXAMPLES (Correct Grounding):
-Question: What are the duties of directors?
-Context: [Chunk 1] संचालकहरूको कर्तव्य... क. कंपनीको लाभको लागि काम गर्नु पर्नेछ। ख. शेयरधनीको हितको रक्षा गर्नु पर्नेछ।
-CORRECT ANSWER:
-1. [From context: "कंपनीको लाभको लागि काम गर्नु पर्नेछ।"] Directors must work for company profit.
-2. [From context: "शेयरधनीको हितको रक्षा गर्नु पर्नेछ।"] Directors must protect shareholder interests.
-
-Question: How is a company dissolved?
-Context: [Chunk 1] कंपनीको विघटन... कंपनीको बोर्डले विघटनको निर्णय गर्नुपर्छ।
-CORRECT ANSWER:
-1. [From context: "कंपनीको बोर्डले विघटनको निर्णय गर्नुपर्छ।"] The company board must decide on dissolution.
-
-NEGATIVE EXAMPLES (Do NOT Do These):
-Question: What happens to employee benefits after dissolution?
-Context: कंपनीको विघटन प्रक्रिया...
-WRONG: "Employees typically receive severance packages." (Not in context, external knowledge)
-CORRECT: "Not found in provided context" (employee benefits not mentioned)
-
-Question: What is the relationship between the board and shareholders?
-Context: [Only says: "Board meets quarterly. Shareholders meet annually."]
-WRONG: "The board reports to shareholders." (Inference, not stated)
-CORRECT: "Board meets quarterly. Shareholders meet annually." (Only state what's explicit)
-
-GROUNDING INSTRUCTIONS:
-For each point in your answer:
-a. Show the exact quote from context in [brackets]
-b. Extract the fact directly—do not interpret
-c. Do not combine quotes to infer new meaning
-d. Stop if you cannot ground the answer
+ANSWER APPROACH:
+Use the context to give a clear, direct answer in plain language.
+- For definitions: explain what the term means and its key characteristics
+- For facts: state the fact directly with the specific value
+- For processes: explain step by step in logical order
+- For conditions: list each condition clearly
+- Always cite the दफा (section number) at the end
+- Answer only from the provided context
+- Do not use legal quote style like "X भन्नाले Y सम्झनु पर्छ"
+  Instead say "X is Y" or "X means Y"
 
 QUESTION: {question}
 
 CONTEXT:
 {context}
 
-INSTRUCTIONS:
-- Use numbered points
-- Cite source chunk for each claim [in brackets]
-- Quote exact text from context
-- Do NOT add interpretation or connections
-- If information is missing, stop and respond: "Not found in provided context"
+{language_instruction}
 
 ANSWER:"""
-
-
 
 
 # DATABASE
@@ -246,15 +231,15 @@ print("Initializing query rewriter...")
 query_rewriter = QueryRewriter()
 
 
-
 # QUERY FUNCTION
 def query_rag(query_text: str, k: int = 10):
 
     query_text = query_text.strip()
     mode = detect_mode(query_text)
+    language = detect_language(query_text)
+    print(f"Language detected: {language.upper()}")
 
     print(f"\nMode detected: {mode.upper()}")
-
 
     # QUERY REWRITING (temporarily disabled)
     print("Query rewriter disabled — using original query")
@@ -263,7 +248,6 @@ def query_rag(query_text: str, k: int = 10):
     print(f"Original: {query_text}")
     print(f"Rewritten: {rewritten_query}")
     print(f"Note: {rewrite_note}")
-
 
     # HYBRID RETRIEVAL
     print("Searching with hybrid retrieval (vector + BM25)...")
@@ -276,14 +260,13 @@ def query_rag(query_text: str, k: int = 10):
     docs = [doc for _, doc in hybrid_results]
     print(f"Retrieved {len(docs)} candidate chunks.")
 
-
     # RERANKING (NO TRUNCATION)
     print("Reranking results...")
     pairs = [(rewritten_query, d.page_content) for d in docs]
     scores = reranker.compute_score(pairs)
     reranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
 
-# CHUNK SELECTION (relative relevance - production approach)
+    # CHUNK SELECTION (relative relevance - production approach)
     print("Selecting chunks by relative relevance...")
 
     if mode == "fact":
@@ -302,30 +285,25 @@ def query_rag(query_text: str, k: int = 10):
         # For explanations: include chunks within 5 points of best score
         top_score = reranked[0][0]
         relevance_threshold = top_score - 5.0
-        
+
         top_docs = [d for score, d in reranked if score > relevance_threshold]
         top_docs = top_docs[:5]  # Cap at 5 to avoid over-context
-        
-        print(f"Explanation mode — using TOP {len(top_docs)} highly relevant chunks (within 5 pts of best)")
 
-
+        print(
+            f"Explanation mode — using TOP {len(top_docs)} highly relevant chunks (within 5 pts of best)"
+        )
 
     # DEBUG OUTPUT
     print(f"\n===== TOP CHUNKS (mode={mode.upper()}) =====")
-    for i, (score, d) in enumerate(reranked[:len(top_docs)]):
+    for i, (score, d) in enumerate(reranked[: len(top_docs)]):
         print(f"\n[{i}] Score: {score:.4f} | ID: {d.metadata.get('id')}")
         print(d.page_content[:300])
         print("...")
 
-
-
     # CONTEXT BUILD
     context = "\n\n---\n\n".join(
-        f"[Chunk {i+1}]\n{d.page_content}"
-        for i, d in enumerate(top_docs)
+        f"[Chunk {i+1}]\n{d.page_content}" for i, d in enumerate(top_docs)
     )
-
-
 
     # PROMPT + LLM CONFIG
     if mode == "fact":
@@ -333,26 +311,22 @@ def query_rag(query_text: str, k: int = 10):
     else:
         prompt_template = EXPLANATION_PROMPT
 
-    prompt = ChatPromptTemplate.from_template(prompt_template).format(
-        question=query_text,
-        context=context
-    )
+    if language == "nepali":
+        language_instruction = "Answer completely in Nepali. Quote exact text from context and explain in Nepali only."
+    else:
+        language_instruction = "Answer completely in English. Translate the Nepali context into clear English."
 
-    model = OllamaLLM(
-        model="qwen2.5:7b",
-        temperature=0.0,
-        num_ctx=4096,
-        repeat_penalty=1.1,
+    prompt = ChatPromptTemplate.from_template(prompt_template).format(
+        question=query_text, context=context, language_instruction=language_instruction
     )
 
     print("\nSending to LLM...\n")
-    answer = model.invoke(prompt)
+    response = gemini_model.generate_content(prompt)
+    answer = response.text
 
-
-
-    # DATE NORMALIZATION
-    answer = normalize_bs_date(answer)
-
+    # DATE NORMALIZATION — only for English answers
+    if language == "english":
+        answer = normalize_bs_date(answer)
 
     # OUTPUT
     print("\n================ ANSWER ================\n")
@@ -364,8 +338,6 @@ def query_rag(query_text: str, k: int = 10):
         print(f"{d.metadata.get('source_type', 'txt')} | {d.metadata.get('id')}")
 
     return answer
-
-
 
 
 # CLI
