@@ -1,0 +1,52 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+.cache
+
+# Node modules (if applicable)
+node_modules/
+npm-debug.log
+
+# Environment files (don't expose secrets)
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
