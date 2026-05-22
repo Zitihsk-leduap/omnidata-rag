@@ -1,52 +1,35 @@
-# evaluation/eval_data.py
-
+# PRODUCTION TEST DATA: Company Act 2063 Questions with expected answers
 EVAL_QUERIES = [
     {
-        "query": "What is machine learning?",
-        "relevant_doc_ids": [
-            "pdf_thebook.pdf_page_10_chunk_0",
-            "pdf_thebook.pdf_page_12_chunk_15",
-            "pdf_thebook.pdf_page_12_chunk_5"
-        ]
+        "query": "How does the Investor Protection Fund work?",
+        "query_ne": "लगानीकर्ता संरक्षण कोष कसरी काम गर्छ?",
+        "expected_keywords": ["दफा १८३", "शेयर", "लगानी", "पाँच वर्ष"],
+        "mode": "explanation",
     },
     {
-        "query": "Explain the concept of overfitting in machine learning.",
-        "relevant_doc_ids": [
-            "pdf_thebook.pdf_page_12_chunk_16",
-            "pdf_thebook.pdf_page_222_chunk_1",
-            "pdf_thebook.pdf_page_12_chunk_15",
-            "pdf_thebook.pdf_page_41_chunk_0"
-        ]
+        "query": "What is the minimum number of founders for a Public Company?",
+        "query_ne": "पब्लिक कम्पनीको लागि न्यूनतम कति जना संस्थापक चाहिन्छ?",
+        "expected_keywords": ["सातजना", "संस्थापक", "पब्लिक"],
+        "expected_answer": "at least 7 founders",
+        "mode": "fact",
     },
     {
-        "query": "How does a decision tree algorithm work?",
-        "relevant_doc_ids": [
-            "pdf_thebook.pdf_page_215_chunk_2",
-            "pdf_thebook.pdf_page_196_chunk_1",
-            "pdf_thebook.pdf_page_222_chunk_1",
-            "pdf_thebook.pdf_page_150_chunk_2"
-        ]
+        "query": "What happens to application money if share allotment fails?",
+        "query_ne": "शेयर बाँडफाँड हुन नसकेमा दरखास्त रकमको के हुन्छ?",
+        "expected_keywords": ["दरखास्त", "रकम", "फिर्ता"],
+        "mode": "explanation",
     },
     {
-        "query": "What is monopoly and how is it played?",
-        "relevant_doc_ids": [
-            "Data/ticket_to_ride.pdf_page_1_chunk_1",
-            "pdf_ticket_to_ride.pdf_page_1_chunk_1",
-            "Data/monopoly.pdf_page_1_chunk_2",
-            "pdf_monopoly.pdf_page_1_chunk_2"
-        ]
+        "query": "Can a company pay dividends before writing off accumulated losses?",
+        "query_ne": "एउटा कम्पनीले सञ्चित नोक्सानी लेखेर हटाउनु अगाडी लाभांश दिन सक्छ?",
+        "expected_keywords": ["लाभांश", "सञ्चित नोक्सानी", "पहिले"],
+        "mode": "explanation",
     },
-
     {
-        "query":"What is the difference between supervised and unsupervised learning?",
-        "relevant_doc_ids":[
-        "",
-        ""
-        ""
-
-
-        
-        ]
-    }
-
+        "query": "When did the Company Act 2063 come into force?",
+        "query_ne": "कम्पनी ऐन २०६३ कहिले लागू भयो?",
+        "expected_keywords": ["२०६३", "असोज", "प्रारम्भ"],
+        "mode": "fact",
+    },
 ]
+
