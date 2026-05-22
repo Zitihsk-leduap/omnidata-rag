@@ -83,6 +83,19 @@ def normalize_bs_date(text: str) -> str:
         return re.sub(r"(\d{4})\s*साल\s*([^\s]+)\s*(\d{1,2})\s*गते", repl, text)
 
 
+# LANGUAGE DETECTION
+def detect_language(text: str) -> str:
+    """Detect if query is Nepali or English."""
+    nepali_chars = len(re.findall(r'[\u0900-\u097F]', text))
+    total_chars = len(text.replace(" ", ""))
+    if total_chars == 0:
+        return "english"
+    nepali_ratio = nepali_chars / total_chars
+    if nepali_ratio > 0.3:
+        return "nepali"
+    return "english"
+
+
 # MODE DETECTION
 CLASSIFIER_PROMPT = """Classify this question into one of two categories:
 
@@ -180,7 +193,9 @@ Question: {question}
 
 Context: {context}
 
-Answer (show source text in [brackets], then the fact):"""
+{language_instruction}
+
+Answer:"""
 
 
 EXPLANATION_PROMPT = """ROLE: Legal explanation assistant for Nepal Company Act 2063.
@@ -236,6 +251,8 @@ INSTRUCTIONS:
 - Do NOT add interpretation or connections
 - If information is missing, stop and respond: "Not found in provided context"
 
+{language_instruction}
+
 ANSWER:"""
 
 
@@ -261,6 +278,8 @@ def query_rag(query_text: str, k: int = 10):
 
     query_text = query_text.strip()
     mode = detect_mode(query_text)
+    language = detect_language(query_text)
+    print(f"Language detected: {language.upper()}")
 
     print(f"\nMode detected: {mode.upper()}")
 
@@ -334,16 +353,22 @@ def query_rag(query_text: str, k: int = 10):
     else:
         prompt_template = EXPLANATION_PROMPT
 
+    if language == "nepali":
+        language_instruction = "Answer completely in Nepali. Quote exact text from context and explain in Nepali only."
+    else:
+        language_instruction = "Answer completely in English. Translate the Nepali context into clear English."
+
     prompt = ChatPromptTemplate.from_template(prompt_template).format(
-        question=query_text, context=context
+        question=query_text, context=context, language_instruction=language_instruction
     )
 
     print("\nSending to LLM...\n")
     response = gemini_model.generate_content(prompt)
     answer = response.text
 
-    # DATE NORMALIZATION
-    answer = normalize_bs_date(answer)
+    # DATE NORMALIZATION — only for English answers
+    if language == "english":
+        answer = normalize_bs_date(answer)
 
     # OUTPUT
     print("\n================ ANSWER ================\n")
