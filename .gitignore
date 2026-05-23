@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
+omnidata-rag.worktrees/
+AI/query_rewriting.py
