@@ -14,12 +14,12 @@ services:
     networks:
       - rag-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
     volumes:
       - ../AI:/app/AI
       - ../backend:/app/backend
@@ -35,9 +35,9 @@ services:
     env_file: ../.env
     environment:
       - BACKEND_URL=http://backend:8080
-    depends_on:
-      backend:
-        condition: service_healthy
+    # depends_on:
+    #   backend:
+    #     condition: service_healthy
     networks:
       - rag-network
     restart: unless-stopped
