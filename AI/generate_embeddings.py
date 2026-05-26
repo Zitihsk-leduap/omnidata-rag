@@ -5,7 +5,7 @@ from FlagEmbedding import BGEM3FlagModel
 
 model = BGEM3FlagModel(
     'BAAI/bge-m3',
-    device="gpu"
+    device="cpu"
 )
 
 class BGEM3Embedding:

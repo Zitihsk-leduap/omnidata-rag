@@ -6,7 +6,7 @@ import streamlit as st
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8080")
 
 st.set_page_config(
     page_title="Nepali RAG Assistant",

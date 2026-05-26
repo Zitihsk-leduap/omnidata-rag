@@ -4,22 +4,19 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile.backend
-    container_name: rag-backend
+    container_name: backend
     ports:
       - "8080:8080"
     env_file: ../.env
-    environment:
-      - BACKEND_URL=http://0.0.0.0:8080
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     networks:
       - rag-network
     restart: unless-stopped
     # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 40s
+    #   test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 60
+    #   start_period: 600s
     volumes:
       - ../AI:/app/AI
       - ../backend:/app/backend
@@ -29,7 +26,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile.frontend
-    container_name: rag-frontend
+    container_name: frontend
     ports:
       - "8501:8501"
     env_file: ../.env
