@@ -3,6 +3,12 @@
 .gitignore
 .github
 
+# Environment files - NEVER include in Docker image
+.env
+.env.local
+.env.*.local
+.env.*
+
 # Python cache
 __pycache__
 *.py[cod]
@@ -43,6 +49,14 @@ logs/
 # Node modules (if applicable)
 node_modules/
 npm-debug.log
+
+# Documentation
+*.md
+docs/
+
+# Temporary directories
+tmp/
+temp/
 
 # Environment files (don't expose secrets)
 .env.local

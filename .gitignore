@@ -3,6 +3,12 @@ chroma/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Environment files - NEVER commit secrets
 .env
+.env.local
+.env.*.local
+.env.*
+
 omnidata-rag.worktrees/
 AI/query_rewriting.py
