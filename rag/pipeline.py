@@ -1,4 +1,5 @@
 import argparse
+import functools
 import os
 import warnings
 
@@ -15,52 +16,56 @@ from rag.retrieval import HybridRetriever
 from rag.language import detect_language, normalize_bs_date
 from rag.prompts import CLASSIFIER_PROMPT, FACT_PROMPT, EXPLANATION_PROMPT
 
-# Initialize Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is not set")
-
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
-    generation_config=genai.types.GenerationConfig(
-        temperature=0.0,
-        max_output_tokens=5000,
-    ),
-)
-
-
-# PATHS
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHROMA_PATH = os.path.join(PROJECT_ROOT, "chroma_db")
 
-print("CHROMA PATH:", CHROMA_PATH)
+
+# Heavy resources (LLM client, reranker model, vector DB, BM25 index) are
+# built lazily and cached on first use, not at import time. This lets the
+# module be imported (e.g. in tests or other scripts) without requiring
+# GEMINI_API_KEY to be set or the reranker/embedding models to be downloaded.
+
+@functools.lru_cache(maxsize=1)
+def get_gemini_model():
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable is not set")
+
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        generation_config=genai.types.GenerationConfig(
+            temperature=0.0,
+            max_output_tokens=5000,
+        ),
+    )
 
 
-# RERANKER
-print("Loading multilingual reranker...")
-reranker = FlagReranker("BAAI/bge-reranker-v2-m3", use_fp16=False)
-print("Reranker loaded.")
+@functools.lru_cache(maxsize=1)
+def get_reranker():
+    print("Loading multilingual reranker...")
+    reranker = FlagReranker("BAAI/bge-reranker-v2-m3", use_fp16=False)
+    print("Reranker loaded.")
+    return reranker
 
 
-# DATABASE
-db = Chroma(
-    persist_directory=CHROMA_PATH,
-    embedding_function=get_embeddings(),
-)
-
-print("TOTAL CHUNKS:", len(db.get()["ids"]))
+@functools.lru_cache(maxsize=1)
+def get_db():
+    db = Chroma(persist_directory=CHROMA_PATH, embedding_function=get_embeddings())
+    print("TOTAL CHUNKS:", len(db.get()["ids"]))
+    return db
 
 
-# HYBRID RETRIEVER
-print("Initializing hybrid retriever...")
-hybrid_retriever = HybridRetriever(db)
+@functools.lru_cache(maxsize=1)
+def get_hybrid_retriever():
+    print("Initializing hybrid retriever...")
+    return HybridRetriever(get_db())
 
 
 def detect_mode(query: str) -> str:
     try:
         prompt = CLASSIFIER_PROMPT.format(question=query)
-        response = gemini_model.generate_content(prompt)
+        response = get_gemini_model().generate_content(prompt)
         result = response.text.strip().upper()
 
         if "EXPLANATION" in result:
@@ -115,7 +120,7 @@ def query_rag(query_text: str, k: int = 10) -> dict:
 
     # HYBRID RETRIEVAL
     print("Searching with hybrid retrieval (vector + BM25)...")
-    hybrid_results = hybrid_retriever.retrieve(query_text, k=k)
+    hybrid_results = get_hybrid_retriever().retrieve(query_text, k=k)
 
     if not hybrid_results:
         print("No documents found.")
@@ -127,7 +132,7 @@ def query_rag(query_text: str, k: int = 10) -> dict:
     # RERANKING (NO TRUNCATION)
     print("Reranking results...")
     pairs = [(query_text, d.page_content) for d in docs]
-    scores = reranker.compute_score(pairs)
+    scores = get_reranker().compute_score(pairs)
     reranked = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
 
     print("Selecting chunks by relative relevance...")
@@ -150,7 +155,7 @@ def query_rag(query_text: str, k: int = 10) -> dict:
     )
 
     print("Sending to LLM...")
-    response = gemini_model.generate_content(prompt)
+    response = get_gemini_model().generate_content(prompt)
     answer = response.text
 
     # DATE NORMALIZATION — only for English answers

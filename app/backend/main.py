@@ -1,10 +1,23 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from rag.pipeline import query_rag
+from rag.pipeline import query_rag, get_gemini_model, get_reranker, get_hybrid_retriever
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Warm the model/reranker/vector-index caches once at startup so the
+    # first real request isn't the one paying for cold model loads.
+    get_gemini_model()
+    get_reranker()
+    get_hybrid_retriever()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
