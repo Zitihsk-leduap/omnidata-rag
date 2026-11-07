@@ -1,6 +1,6 @@
 from typing import List
-from query import query_rag  # your RAG query function
-from eval_data import EVAL_QUERIES
+from rag.pipeline import query_rag
+from evaluation.eval_data import EVAL_QUERIES
 
 def faithfulness_score(llm_response: str, retrieved_docs: List[str]) -> float:
     """

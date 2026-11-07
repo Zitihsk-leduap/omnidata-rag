@@ -3,7 +3,7 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: Dockerfile.backend
+      dockerfile: docker/backend.Dockerfile
     container_name: backend
     ports:
       - "8080:8080"
@@ -18,14 +18,15 @@ services:
     #   retries: 60
     #   start_period: 600s
     volumes:
-      - ../AI:/app/AI
-      - ../backend:/app/backend
+      - ../rag:/app/rag
+      - ../app/backend:/app/app/backend
+      - ../chroma_db:/app/chroma_db
 
   # Frontend (Streamlit App)
   frontend:
     build:
       context: ..
-      dockerfile: Dockerfile.frontend
+      dockerfile: docker/frontend.Dockerfile
     container_name: frontend
     ports:
       - "8501:8501"
@@ -39,7 +40,7 @@ services:
       - rag-network
     restart: unless-stopped
     volumes:
-      - ../frontend:/app/frontend
+      - ../app/frontend:/app/app/frontend
 
 networks:
   rag-network:

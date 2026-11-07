@@ -66,16 +66,16 @@ The system requires a populated Chroma vector database before starting.
 
 ```bash
 # Build the backend image
-docker compose -f Docker/docker-compose.yml build backend
+docker compose -f docker/docker-compose.yml build backend
 
 # Run the database initialization
-docker compose -f Docker/docker-compose.yml run --rm backend python -m AI.load
+docker compose -f docker/docker-compose.yml run --rm backend python -m rag.ingest
 
 # This will:
-# 1. Read AI/Data/company_act_ne.txt
+# 1. Read data/company_act_ne.txt
 # 2. Parse and chunk the document
 # 3. Generate embeddings
-# 4. Store in AI/chroma/ directory
+# 4. Store in chroma_db/ directory
 # 5. Exit when complete
 ```
 
@@ -90,10 +90,10 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Load the database
-python -m AI.load
+python -m rag.ingest
 
 You'll see output like:
-# CHROMA PATH: /path/to/omnidata-rag/AI/chroma
+# CHROMA PATH: /path/to/omnidata-rag/chroma_db
 # Loading multilingual reranker...
 # Reranker loaded.
 # Processed X documents, Y chunks created
@@ -109,7 +109,7 @@ NOTE: First load may take 5-10 minutes (downloading embedding models).
 
 ```bash
 # From project root
-docker compose -f Docker/docker-compose.yml up
+docker compose -f docker/docker-compose.yml up
 ```
 
 ### Access the Application
@@ -124,20 +124,20 @@ After containers start:
 
 ```bash
 # Start services in detached mode
-docker compose -f Docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml up -d
 
 # View logs
-docker compose -f Docker/docker-compose.yml logs -f frontend    # Frontend logs
-docker compose -f Docker/docker-compose.yml logs -f backend     # Backend logs
+docker compose -f docker/docker-compose.yml logs -f frontend    # Frontend logs
+docker compose -f docker/docker-compose.yml logs -f backend     # Backend logs
 
 # Stop services
-docker compose -f Docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml down
 ```
 
 ### View Container Status
 
 ```bash
-docker compose -f Docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml ps
 
 # Output should show:
 # NAME        STATUS
@@ -160,7 +160,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Load database
-python -m AI.load
+python -m rag.ingest
 
 # Verify environment variables are set
 echo $GEMINI_API_KEY  # Should not be empty
@@ -173,7 +173,7 @@ echo $GEMINI_API_KEY  # Should not be empty
 cd /path/to/omnidata-rag
 source venv/bin/activate
 
-uvicorn backend.main:app --reload --port 8080
+uvicorn app.backend.main:app --reload --port 8080
 
 # Output:
 # INFO:     Uvicorn running on http://127.0.0.1:8080
@@ -187,7 +187,7 @@ uvicorn backend.main:app --reload --port 8080
 cd /path/to/omnidata-rag
 source venv/bin/activate
 
-streamlit run frontend/app_new.py
+streamlit run app/frontend/streamlit_app.py
 
 # Output:
 # You can now view your Streamlit app in your browser.
@@ -233,7 +233,7 @@ curl -X POST http://localhost:8080/chat \
 
 ### Modify Backend Ports
 
-Edit `Docker/docker-compose.yml`:
+Edit `docker/docker-compose.yml`:
 ```yaml
 backend:
   ports:
@@ -247,7 +247,7 @@ BACKEND_URL=http://backend:9000
 
 ### Modify Frontend Port
 
-Edit `Docker/docker-compose.yml`:
+Edit `docker/docker-compose.yml`:
 ```yaml
 frontend:
   ports:
@@ -258,7 +258,7 @@ frontend:
 
 The current setup stores data in containers. For persistence:
 
-Edit `Docker/docker-compose.yml` to add:
+Edit `docker/docker-compose.yml` to add:
 ```yaml
 volumes:
   chroma_data:
@@ -267,9 +267,9 @@ volumes:
 services:
   backend:
     volumes:
-      - ../AI:/app/AI
-      - ../backend:/app/backend
-      - chroma_data:/app/AI/chroma  # Add this line
+      - ../rag:/app/rag
+      - ../app/backend:/app/app/backend
+      - chroma_data:/app/chroma_db  # Add this line
 ```
 
 ---
@@ -283,13 +283,13 @@ services:
 **Solution**:
 ```bash
 # Check if container is running
-docker compose -f Docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml ps
 
 # View backend logs
-docker compose -f Docker/docker-compose.yml logs backend
+docker compose -f docker/docker-compose.yml logs backend
 
 # Restart backend
-docker compose -f Docker/docker-compose.yml restart backend
+docker compose -f docker/docker-compose.yml restart backend
 ```
 
 ### Issue: "GEMINI_API_KEY not set"
@@ -312,10 +312,10 @@ nano .env  # Edit and add your key
 **Solution**:
 ```bash
 # Run initialization
-docker compose -f Docker/docker-compose.yml run --rm backend python -m AI.load
+docker compose -f docker/docker-compose.yml run --rm backend python -m rag.ingest
 
 # Verify it exists
-ls -la AI/chroma/
+ls -la chroma_db/
 ```
 
 ### Issue: "Frontend can't reach backend"
@@ -330,8 +330,8 @@ BACKEND_URL=http://backend:8080
 # NOT http://localhost:8080 (that's for local dev)
 
 # Restart containers
-docker compose -f Docker/docker-compose.yml down
-docker compose -f Docker/docker-compose.yml up
+docker compose -f docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml up
 ```
 
 ### Issue: "Out of memory" or slow responses
@@ -350,10 +350,10 @@ docker compose -f Docker/docker-compose.yml up
 **Solution**:
 ```bash
 This is normal, wait 5-10 minutes. Monitor with:
-watch -n 5 'du -sh AI/chroma/'
+watch -n 5 'du -sh chroma_db/'
 
 # Progress will appear in logs
-docker compose -f Docker/docker-compose.yml logs -f backend
+docker compose -f docker/docker-compose.yml logs -f backend
 ```
 
 ---
@@ -367,23 +367,23 @@ docker compose -f Docker/docker-compose.yml logs -f backend
 docker stats
 
 # Specific container resource usage
-docker compose -f Docker/docker-compose.yml stats
+docker compose -f docker/docker-compose.yml stats
 ```
 
 ### Check Logs
 
 ```bash
 # All services
-docker compose -f Docker/docker-compose.yml logs
+docker compose -f docker/docker-compose.yml logs
 
 # Last 50 lines
-docker compose -f Docker/docker-compose.yml logs --tail=50
+docker compose -f docker/docker-compose.yml logs --tail=50
 
 # Follow in real-time
-docker compose -f Docker/docker-compose.yml logs -f
+docker compose -f docker/docker-compose.yml logs -f
 
 # Specific service
-docker compose -f Docker/docker-compose.yml logs frontend
+docker compose -f docker/docker-compose.yml logs frontend
 ```
 
 ---
@@ -392,13 +392,13 @@ docker compose -f Docker/docker-compose.yml logs frontend
 
 ```bash
 # Graceful shutdown
-docker compose -f Docker/docker-compose.yml down
+docker compose -f docker/docker-compose.yml down
 
 # Remove volumes (clears data)
-docker compose -f Docker/docker-compose.yml down -v
+docker compose -f docker/docker-compose.yml down -v
 
 # Force stop
-docker compose -f Docker/docker-compose.yml kill
+docker compose -f docker/docker-compose.yml kill
 ```
 
 ---
@@ -418,7 +418,7 @@ Before reporting issues, verify:
 
 - Docker & Docker Compose installed
 - GEMINI_API_KEY in `.env`
-- Vector database initialized (`AI/chroma/` exists)
+- Vector database initialized (`chroma_db/` exists)
 - No port conflicts (8080, 8501 free)
 - Sufficient RAM (8GB+)
 - Internet connection (for API)
@@ -430,7 +430,7 @@ Before reporting issues, verify:
 
 Check logs first:
 ```bash
-docker compose -f Docker/docker-compose.yml logs --tail=100
+docker compose -f docker/docker-compose.yml logs --tail=100
 ```
 
 Then refer to the troubleshooting section above.

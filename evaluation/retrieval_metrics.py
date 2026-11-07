@@ -1,5 +1,5 @@
-from eval_data import EVAL_QUERIES
-from query import query_rag
+from evaluation.eval_data import EVAL_QUERIES
+from rag.pipeline import query_rag
 from typing import List
 
 
@@ -53,7 +53,8 @@ for idx, item in enumerate(EVAL_QUERIES, 1):
 
     # Test with English query
     print(f"\n[Testing English query]")
-    query_rag(query)
+    result = query_rag(query)
+    print(result["answer"])
 
     # Validation checks can be added here
     # For now, system prints to stdout only

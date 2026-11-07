@@ -1,7 +1,7 @@
-from retrieval_metrics import precision_at_k,recall_at_k
-from faithfullness import faithfulness_score
-from query import query_rag
-from eval_data import EVAL_QUERIES
+from evaluation.retrieval_metrics import precision_at_k, recall_at_k
+from evaluation.faithfulness import faithfulness_score
+from rag.pipeline import query_rag
+from evaluation.eval_data import EVAL_QUERIES
 import matplotlib.pyplot as plt
 import numpy as np
 

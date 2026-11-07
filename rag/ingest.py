@@ -10,13 +10,13 @@ from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 
-from generate_embeddings import get_embeddings
+from rag.embeddings import get_embeddings
 
 
 # PATHS
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "Data"))
-CHROMA_PATH = os.path.join(BASE_DIR, "chroma")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_PATH = os.path.join(PROJECT_ROOT, "data")
+CHROMA_PATH = os.path.join(PROJECT_ROOT, "chroma_db")
 
 print("CHROMA PATH:", CHROMA_PATH)
 print("DATA PATH:", DATA_PATH)
