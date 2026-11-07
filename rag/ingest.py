@@ -6,9 +6,7 @@ import unicodedata
 import hashlib
 from typing import List, Tuple
 
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_core.documents import Document
-from langchain_chroma import Chroma
 
 from rag.embeddings import get_embeddings
 
@@ -17,9 +15,6 @@ from rag.embeddings import get_embeddings
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(PROJECT_ROOT, "data")
 CHROMA_PATH = os.path.join(PROJECT_ROOT, "chroma_db")
-
-print("CHROMA PATH:", CHROMA_PATH)
-print("DATA PATH:", DATA_PATH)
 
 
 # CLEAN
@@ -31,6 +26,8 @@ def clean_text(text: str) -> str:
 
 # LOAD TXT FILES
 def load_txt_files() -> List[Document]:
+    from langchain_community.document_loaders import DirectoryLoader, TextLoader
+
     loader = DirectoryLoader(
         DATA_PATH,
         glob="**/*.txt",
@@ -334,6 +331,8 @@ def build_parent_child_chunks(
 
 # VECTOR STORE
 def add_to_vectorstore(chunks: List[Document]):
+    from langchain_chroma import Chroma
+
     db = Chroma(
         persist_directory=CHROMA_PATH,
         embedding_function=get_embeddings()
@@ -383,6 +382,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--clear_db", action="store_true")
     args = parser.parse_args()
+
+    print("CHROMA PATH:", CHROMA_PATH)
+    print("DATA PATH:", DATA_PATH)
 
     if args.clear_db:
         clear_db()

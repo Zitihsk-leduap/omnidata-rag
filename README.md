@@ -182,6 +182,17 @@ python -m evaluation.retrieval_metrics
 python -m evaluation.visualize
 ```
 
+### Running Tests
+
+Unit tests cover the pure logic (chunking, language/date handling, hybrid
+retrieval scoring, backend intent routing) and don't require a GEMINI_API_KEY
+or downloaded models, since those are now lazily loaded.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ## Security Notes
 
 - API Keys: Never commit `.env` files to Git. Use `.env.example` as template.

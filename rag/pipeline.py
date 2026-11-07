@@ -3,13 +3,7 @@ import functools
 import os
 import warnings
 
-# Suppress deprecation warning from google.generativeai
-warnings.filterwarnings("ignore", category=FutureWarning)
-import google.generativeai as genai
-
-from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
-from FlagEmbedding import FlagReranker
 
 from rag.embeddings import get_embeddings
 from rag.retrieval import HybridRetriever
@@ -21,12 +15,18 @@ CHROMA_PATH = os.path.join(PROJECT_ROOT, "chroma_db")
 
 
 # Heavy resources (LLM client, reranker model, vector DB, BM25 index) are
-# built lazily and cached on first use, not at import time. This lets the
-# module be imported (e.g. in tests or other scripts) without requiring
-# GEMINI_API_KEY to be set or the reranker/embedding models to be downloaded.
+# built lazily and cached on first use, not at import time — including the
+# imports themselves. This lets the module (and anything that imports it,
+# like the FastAPI app or the evaluation scripts) be imported without
+# GEMINI_API_KEY set or the torch/FlagEmbedding/chromadb stack installed.
 
 @functools.lru_cache(maxsize=1)
 def get_gemini_model():
+    import google.generativeai as genai
+
+    # Suppress deprecation warning from google.generativeai
+    warnings.filterwarnings("ignore", category=FutureWarning)
+
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is not set")
@@ -43,6 +43,8 @@ def get_gemini_model():
 
 @functools.lru_cache(maxsize=1)
 def get_reranker():
+    from FlagEmbedding import FlagReranker
+
     print("Loading multilingual reranker...")
     reranker = FlagReranker("BAAI/bge-reranker-v2-m3", use_fp16=False)
     print("Reranker loaded.")
@@ -51,6 +53,8 @@ def get_reranker():
 
 @functools.lru_cache(maxsize=1)
 def get_db():
+    from langchain_chroma import Chroma
+
     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=get_embeddings())
     print("TOTAL CHUNKS:", len(db.get()["ids"]))
     return db
