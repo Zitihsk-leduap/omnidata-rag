@@ -10,7 +10,6 @@ This project leverages advanced NLP techniques to provide intelligent, context-a
 - Hybrid Retrieval: Combines BM25 (keyword-based) + Vector (semantic) search for optimal results
 - Multi-stage Ranking: Uses FlagEmbedding reranker for result refinement
 - Hierarchical Chunking: Parent-child chunk relationships for contextual awareness
-- Query Rewriting: Automatic query expansion and optimization using Google Gemini
 - Date Normalization: Handles Nepali calendar (Bikram Sambat) date conversions
 - REST API Backend: FastAPI with CORS support for extensibility
 - Modern Web UI: Streamlit frontend with responsive design
@@ -38,33 +37,41 @@ This project leverages advanced NLP techniques to provide intelligent, context-a
 
 ```
 omnidata-rag/
-├── AI/                           # RAG Pipeline & LLM Logic
-│   ├── query.py                 # Main RAG query engine
-│   ├── query_rewriting.py       # Query optimization
-│   ├── hybrid_retrieval.py      # BM25 + Vector hybrid search
-│   ├── generate_embeddings.py   # Embedding model initialization
-│   ├── load.py                  # Database population script
-│   ├── chroma/                  # Vector database storage
-│   └── evaluation/              # Evaluation metrics
+├── app/
+│   ├── backend/
+│   │   └── main.py              # FastAPI application
+│   └── frontend/
+│       └── streamlit_app.py     # Streamlit UI
 │
-├── backend/
-│   └── main.py                  # FastAPI application
+├── rag/                          # RAG Pipeline & LLM Logic
+│   ├── pipeline.py               # Main RAG query engine
+│   ├── retrieval.py              # BM25 + Vector hybrid search
+│   ├── embeddings.py             # Embedding model initialization
+│   ├── ingest.py                 # Database population script
+│   ├── prompts.py                # Prompt templates
+│   └── language.py               # Language detection & BS date normalization
 │
-├── frontend/
-│   ├── app_new.py              # Main Streamlit UI (production)
-│   └── app.py                  # Alternative UI
+├── evaluation/                   # Evaluation metrics
 │
-├── Data/
-│   └── company_act_ne.txt      # Nepal Company Act 2063 document
+├── scripts/
+│   ├── scrape.py                 # Web scraping utility
+│   └── clear_chroma.py           # Vector DB reset utility
 │
-├── Docker/
-│   └── docker-compose.yml      # Multi-container orchestration
+├── data/
+│   └── company_act_ne.txt        # Nepal Company Act 2063 document
 │
-├── Dockerfile.backend          # Backend container image
-├── Dockerfile.frontend         # Frontend container image
-├── requirements.txt            # Python dependencies
-├── .env.example                # Environment variables template
-└── README.md                   # This file
+├── docker/
+│   ├── docker-compose.yml        # Multi-container orchestration
+│   ├── backend.Dockerfile        # Backend container image
+│   └── frontend.Dockerfile       # Frontend container image
+│
+├── docs/
+│   └── RUN.md                    # Detailed run/troubleshooting guide
+│
+├── chroma_db/                    # Vector database storage (generated, gitignored)
+├── requirements.txt              # Python dependencies
+├── .env.example                  # Environment variables template
+└── README.md                     # This file
 ```
 
 ## Quick Start
@@ -86,10 +93,10 @@ cp .env.example .env
 # Edit .env and add your GEMINI_API_KEY from https://aistudio.google.com/app/apikey
 
 # 3. Initialize the vector database (first time only)
-python -m AI.load
+python -m rag.ingest
 
 # 4. Start all services with Docker
-docker compose -f Docker/docker-compose.yml up
+docker compose -f docker/docker-compose.yml up
 
 # 5. Access the application
 # Frontend: http://localhost:8501
@@ -139,6 +146,9 @@ Response:
 ```json
 {
   "reply": "The Nepal Company Act 2063 is...",
+  "sources": [
+    {"id": "child_...", "source_type": "txt", "title": "...", "text": "..."}
+  ],
   "status": "success"
 }
 ```
@@ -156,21 +166,31 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Initialize database
-python -m AI.load
+python -m rag.ingest
 
 # Run backend
-uvicorn backend.main:app --reload --port 8080
+uvicorn app.backend.main:app --reload --port 8080
 
 # In another terminal, run frontend
-streamlit run frontend/app_new.py
+streamlit run app/frontend/streamlit_app.py
 ```
 
 ### Running Evaluation
 
 ```bash
-python AI/evaluation/eval_data.py
-python AI/evaluation/faithfullness.py
-python AI/evaluation/retrieval_metrics.py
+python -m evaluation.retrieval_metrics
+python -m evaluation.visualize
+```
+
+### Running Tests
+
+Unit tests cover the pure logic (chunking, language/date handling, hybrid
+retrieval scoring, backend intent routing) and don't require a GEMINI_API_KEY
+or downloaded models, since those are now lazily loaded.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
 ```
 
 ## Security Notes
@@ -185,8 +205,6 @@ python AI/evaluation/retrieval_metrics.py
 User Query (Streamlit)
     ↓
 [Frontend] → HTTP POST → [Backend API]
-    ↓
-Query Rewriting (Gemini)
     ↓
 Hybrid Retrieval (BM25 + Vector)
     ↓

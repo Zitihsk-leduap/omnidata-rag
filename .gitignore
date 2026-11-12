@@ -1,5 +1,5 @@
 .venv/
-chroma/
+chroma_db/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -11,4 +11,3 @@ __pycache__/
 .env.*
 
 omnidata-rag.worktrees/
-AI/query_rewriting.py

@@ -24,4 +24,4 @@ EXPOSE 8080
 #     CMD python -c "import requests; requests.get('http://localhost:8080/docs', timeout=5)"
 
 # Run the backend server
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
